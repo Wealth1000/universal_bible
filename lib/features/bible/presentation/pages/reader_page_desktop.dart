@@ -1,27 +1,32 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:universal_bible/core/providers/translation_repo_provider.dart';
+import 'package:universal_bible/core/utils/book_name_utils.dart';
+import 'package:universal_bible/core/utils/scripture_format.dart';
 import 'package:universal_bible/database/app_database.dart';
+import 'package:universal_bible/features/settings/domain/book_name_settings_provider.dart';
+import 'package:universal_bible/features/bible/domain/book_info.dart';
+import 'package:universal_bible/features/bible/domain/chapter_navigation.dart';
+import 'package:universal_bible/features/bible/domain/continuous_reading_provider.dart';
 import 'package:universal_bible/features/bible/domain/reader_provider.dart';
 import 'dart:convert';
 import '../../../../core/providers/database_provider.dart';
-import '../../data/repositories/translation_repository.dart';
 
+/// A chapter's verses together with its location, for rendering (and, in
+/// continuous mode, appending) chapters in the reader.
+class _LoadedChapter {
+  final int book;
+  final int chapter;
+  final String bookName;
+  final List<Verse> verses;
 
-
-// --- Repository provider ---
-final _translationRepoProvider = Provider<TranslationRepository>((ref) {
-  final db = ref.watch(databaseProvider);
-  return TranslationRepository(db);
-});
-
-// --- Helper to load book list and chapter counts ---
-class BookInfo {
-  final int number;
-  final String name;
-  final Map<int, int> chapterCounts;
-
-  BookInfo({required this.number, required this.name, required this.chapterCounts});
+  const _LoadedChapter({
+    required this.book,
+    required this.chapter,
+    required this.bookName,
+    required this.verses,
+  });
 }
 
 // --- Reader Page ---
@@ -34,10 +39,33 @@ class ReaderPageDesktop extends ConsumerStatefulWidget {
 
 class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
   List<BookInfo>? _books;
-  Map<int, int>? _chapterCounts;
   bool _isLoading = true;
   bool _selectionFabVisible = false;
   String _selectedText = '';
+
+  // Cache the verses future so unrelated setState calls (selection FAB,
+  // verse taps) don't recreate it — recreating it makes FutureBuilder
+  // re-enter the waiting state, which flickers the reader and destroys
+  // any in-progress text selection.
+  Future<List<Verse>>? _versesFuture;
+  String? _versesKey;
+
+  Future<List<Verse>> _ensureVersesFuture(
+    String? translationId,
+    int? book,
+    int? chapter,
+  ) {
+    final key = '$translationId|$book|$chapter';
+    if (_versesKey != key || _versesFuture == null) {
+      _versesKey = key;
+      _versesFuture = translationId != null && book != null && chapter != null
+          ? ref
+                .read(databaseProvider)
+                .getVersesForChapter(translationId, book, chapter)
+          : Future.value(<Verse>[]);
+    }
+    return _versesFuture!;
+  }
 
   @override
   void initState() {
@@ -46,7 +74,7 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
   }
 
   Future<void> _loadBooks() async {
-    final repo = ref.read(_translationRepoProvider);
+    final repo = ref.read(translationRepoProvider);
     final translations = await repo.getInstalled();
     if (translations.isEmpty) {
       if (mounted) {
@@ -84,16 +112,23 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
     final sortedEntries = bookMap.entries.toList()
       ..sort((a, b) => (a.value as int).compareTo(b.value as int));
 
+    final preserveOriginal = ref.read(preserveOriginalBookNamesProvider);
     final books = <BookInfo>[];
     for (final entry in sortedEntries) {
       final name = entry.key;
       final number = entry.value as int;
+      // Format at display time so name fixes apply without re-importing
+      // the translation (bookDisplayNamesJson may be stale or missing).
+      final displayName =
+          formatBookName(name, preserveOriginal: preserveOriginal);
       final counts = bookChapters[number] ?? {};
-      books.add(BookInfo(
-        number: number,
-        name: _capitalize(name),
-        chapterCounts: counts,
-      ));
+      books.add(
+        BookInfo(
+          number: number,
+          name: displayName,
+          chapterCounts: counts,
+        ),
+      );
     }
 
     setState(() {
@@ -111,59 +146,58 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
             : 1;
         ref.read(currentChapterProvider.notifier).set(firstChapter);
       }
-      if (currentBook != null) {
-        _updateChapterCounts(currentBook);
-      }
     });
   }
 
-  void _updateChapterCounts(int bookNumber) {
-    final book = _books?.firstWhere(
-      (b) => b.number == bookNumber,
-      orElse: () => BookInfo(number: 0, name: '', chapterCounts: {}),
-    );
-    if (book != null && book.number != 0) {
-      setState(() {
-        _chapterCounts = book.chapterCounts;
-        final currentChapter = ref.read(currentChapterProvider);
-        if (currentChapter != null && !_chapterCounts!.containsKey(currentChapter)) {
-          final firstChapter = _chapterCounts!.keys.isNotEmpty
-              ? _chapterCounts!.keys.first
-              : 1;
-          ref.read(currentChapterProvider.notifier).set(firstChapter);
-        }
-      });
-    }
+  void _goTo(ChapterRef target) {
+    ref.read(currentBookProvider.notifier).set(target.book);
+    ref.read(currentChapterProvider.notifier).set(target.chapter);
   }
 
-  String _capitalize(String s) {
-    if (s.isEmpty) return s;
-    return s[0].toUpperCase() + s.substring(1);
+  /// Loads the chapter after (book, chapter), crossing book boundaries.
+  /// Returns null at the end of the last book.
+  Future<_LoadedChapter?> _loadChapterAfter(int book, int chapter) async {
+    final books = _books;
+    final translationId = ref.read(currentTranslationProvider);
+    if (books == null || translationId == null) return null;
+
+    final target = nextChapterRef(books, book, chapter);
+    if (target == null) return null;
+
+    final verses = await ref
+        .read(databaseProvider)
+        .getVersesForChapter(translationId, target.book, target.chapter);
+    return _LoadedChapter(
+      book: target.book,
+      chapter: target.chapter,
+      bookName: bookNameFor(books, target),
+      verses: verses,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    // Rebuild book names when the "preserve original names" toggle changes.
+    ref.listen(preserveOriginalBookNamesProvider, (prev, next) {
+      if (prev != next) _loadBooks();
+    });
+
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final colorScheme = theme.colorScheme;
 
-    final primaryColor = isDark
-        ? colorScheme.primary
-        : const Color(0xFF2E434C);
+    final primaryColor = isDark ? colorScheme.primary : const Color(0xFF2E434C);
     final onSurfaceVariant = colorScheme.onSurfaceVariant;
     final surfaceColor = theme.scaffoldBackgroundColor;
 
     final translationId = ref.watch(currentTranslationProvider);
     final book = ref.watch(currentBookProvider);
     final chapter = ref.watch(currentChapterProvider);
+    final continuousReading = ref.watch(continuousReadingProvider);
 
     if (_isLoading) {
       return Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(
-            color: primaryColor,
-          ),
-        ),
+        body: Center(child: CircularProgressIndicator(color: primaryColor)),
       );
     }
 
@@ -173,11 +207,7 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                Icons.translate,
-                size: 48,
-                color: onSurfaceVariant,
-              ),
+              Icon(Icons.translate, size: 48, color: onSurfaceVariant),
               const SizedBox(height: 16),
               Text(
                 'No translations installed.',
@@ -203,99 +233,104 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
     final bookName = currentBookInfo.name;
     final chapterCounts = currentBookInfo.chapterCounts;
     final chapterKeys = chapterCounts.keys.toList()..sort();
-    final currentChapter = chapter ?? (chapterKeys.isNotEmpty ? chapterKeys.first : 1);
+    final currentChapter =
+        chapter ?? (chapterKeys.isNotEmpty ? chapterKeys.first : 1);
+    final currentBook = currentBookInfo.number;
 
-    final versesFuture = translationId != null && book != null && chapter != null
-        ? ref.read(databaseProvider).getVersesForChapter(
-              translationId,
-              book,
-              chapter,
-            )
-        : Future.value(<Verse>[]);
+    final prevRef = prevChapterRef(_books!, currentBook, currentChapter);
+    final nextRef = nextChapterRef(_books!, currentBook, currentChapter);
+
+    final versesFuture = _ensureVersesFuture(translationId, book, chapter);
 
     return Scaffold(
       backgroundColor: surfaceColor,
-      body: Row(
+      body: Column(
         children: [
-          // Desktop Navigation Rail
-          _NavigationRail(
-            selectedIndex: 0,
-            onItemSelected: (index) {
-              if (index == 2) {
-                context.go('/translations');
-              }
-              // Other indexes can be implemented later
+          // Top Bar
+          _TopBar(
+            bookName: bookName,
+            chapter: currentChapter,
+            books: _books!,
+            chapterKeys: chapterKeys,
+            translationId: translationId,
+            continuousReading: continuousReading,
+            onContinuousReadingChanged: (value) {
+              ref.read(continuousReadingProvider.notifier).set(value);
+            },
+            onBookChanged: (newBook) {
+              final firstChapter = newBook.chapterCounts.keys.isNotEmpty
+                  ? (newBook.chapterCounts.keys.toList()..sort()).first
+                  : 1;
+              _goTo(ChapterRef(newBook.number, firstChapter));
+            },
+            onChapterChanged: (newChapter) {
+              ref.read(currentChapterProvider.notifier).set(newChapter);
+            },
+            onTranslationTap: () {
+              // TODO: Show translation switcher
             },
           ),
-          // Main Content Area
+          // Scripture Content
           Expanded(
-            child: Column(
-              children: [
-                // Top Bar
-                _TopBar(
-                  bookName: bookName,
-                  chapter: currentChapter,
-                  books: _books!,
-                  chapterKeys: chapterKeys,
-                  translationId: translationId,
-                  onBookChanged: (newBook) {
-                    ref.read(currentBookProvider.notifier).set(newBook.number);
+            child: FutureBuilder<List<Verse>>(
+              future: versesFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Text(
+                      'Error loading verses: ${snapshot.error}',
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  );
+                }
+                final verses = snapshot.data ?? [];
+                if (verses.isEmpty) {
+                  return const Center(
+                    child: Text('No verses found for this chapter.'),
+                  );
+                }
+                return _ReaderContent(
+                  // Reset loaded chapters and scroll when the user
+                  // navigates or toggles continuous mode.
+                  key: ValueKey(
+                    '$translationId|$currentBook|$currentChapter|$continuousReading',
+                  ),
+                  initialChapter: _LoadedChapter(
+                    book: currentBook,
+                    chapter: currentChapter,
+                    bookName: bookName,
+                    verses: verses,
+                  ),
+                  continuousReading: continuousReading,
+                  prevLabel: prevRef == null
+                      ? null
+                      : '${bookNameFor(_books!, prevRef)} ${prevRef.chapter}',
+                  nextLabel: nextRef == null
+                      ? null
+                      : '${bookNameFor(_books!, nextRef)} ${nextRef.chapter}',
+                  onPrev: prevRef == null ? null : () => _goTo(prevRef),
+                  onNext: nextRef == null ? null : () => _goTo(nextRef),
+                  loadChapterAfter: _loadChapterAfter,
+                  onTextSelected: (text) {
+                    // Only rebuild when the state actually changes —
+                    // rebuilding during a selection drag causes churn.
+                    final visible = text.isNotEmpty;
+                    if (visible == _selectionFabVisible &&
+                        text == _selectedText) {
+                      return;
+                    }
                     setState(() {
-                      _chapterCounts = newBook.chapterCounts;
-                      final firstChapter = newBook.chapterCounts.keys.isNotEmpty
-                          ? newBook.chapterCounts.keys.first
-                          : 1;
-                      ref.read(currentChapterProvider.notifier).set(firstChapter);
+                      if (visible) {
+                        _selectedText = text;
+                      }
+                      _selectionFabVisible = visible;
                     });
                   },
-                  onChapterChanged: (newChapter) {
-                    ref.read(currentChapterProvider.notifier).set(newChapter);
-                  },
-                  onTranslationTap: () {
-                    // TODO: Show translation switcher
-                  },
-                ),
-                // Scripture Content
-                Expanded(
-                  child: FutureBuilder<List<Verse>>(
-                    future: versesFuture,
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-                      if (snapshot.hasError) {
-                        return Center(
-                          child: Text(
-                            'Error loading verses: ${snapshot.error}',
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                        );
-                      }
-                      final verses = snapshot.data ?? [];
-                      if (verses.isEmpty) {
-                        return const Center(
-                          child: Text('No verses found for this chapter.'),
-                        );
-                      }
-                      return _ReaderContent(
-                        verses: verses,
-                        bookName: bookName,
-                        chapter: currentChapter,
-                        onTextSelected: (text) {
-                          setState(() {
-                            if (text.isNotEmpty) {
-                              _selectedText = text;
-                              _selectionFabVisible = true;
-                            } else {
-                              _selectionFabVisible = false;
-                            }
-                          });
-                        },
-                      );
-                    },
-                  ),
-                ),
-              ],
+                );
+              },
             ),
           ),
         ],
@@ -316,11 +351,7 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
                   const SizedBox(width: 8),
                   const Text('Add Note'),
                   const SizedBox(width: 8),
-                  Container(
-                    width: 1,
-                    height: 20,
-                    color: Colors.white30,
-                  ),
+                  Container(width: 1, height: 20, color: Colors.white30),
                   const SizedBox(width: 8),
                   const Icon(Icons.share),
                 ],
@@ -333,119 +364,6 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
   }
 }
 
-// --- Navigation Rail Widget ---
-class _NavigationRail extends StatelessWidget {
-  final int selectedIndex;
-  final Function(int) onItemSelected;
-
-  const _NavigationRail({
-    required this.selectedIndex,
-    required this.onItemSelected,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final onSurfaceVariant = colorScheme.onSurfaceVariant;
-
-    final items = [
-      {'icon': Icons.menu_book, 'label': 'Bible'},
-      {'icon': Icons.search, 'label': 'Search'},
-      {'icon': Icons.translate, 'label': 'Translations'},
-      {'icon': Icons.bookmark, 'label': 'Bookmarks'},
-      {'icon': Icons.sticky_note_2, 'label': 'Notes'},
-      {'icon': Icons.download, 'label': 'Downloads'},
-      {'icon': Icons.settings, 'label': 'Settings'},
-    ];
-
-    return Container(
-      width: 72,
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLow,
-        border: Border(
-          right: BorderSide(
-            color: colorScheme.outlineVariant,
-            width: 1,
-          ),
-        ),
-      ),
-      child: Column(
-        children: [
-          const SizedBox(height: 24),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Image.asset(
-              'assets/images/app_logo.png',
-              width: 40,
-              height: 40,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Expanded(
-            child: ListView.builder(
-              itemCount: items.length,
-              itemBuilder: (context, index) {
-                final isSelected = index == selectedIndex;
-                final icon = items[index]['icon'] as IconData;
-                final label = items[index]['label'] as String;
-                return Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? colorScheme.secondaryContainer
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(32),
-                  ),
-                  child: InkWell(
-                    onTap: () => onItemSelected(index),
-                    borderRadius: BorderRadius.circular(32),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            icon,
-                            color: isSelected
-                                ? colorScheme.onSecondaryContainer
-                                : onSurfaceVariant,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            label,
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: isSelected
-                                  ? colorScheme.onSecondaryContainer
-                                  : onSurfaceVariant,
-                              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                              fontSize: 10,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Text(
-              'v1.0',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: onSurfaceVariant.withValues(alpha: 0.4),
-                fontSize: 10,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 // --- Top Bar Widget ---
 class _TopBar extends StatelessWidget {
   final String bookName;
@@ -453,6 +371,8 @@ class _TopBar extends StatelessWidget {
   final List<BookInfo> books;
   final List<int> chapterKeys;
   final String? translationId;
+  final bool continuousReading;
+  final ValueChanged<bool> onContinuousReadingChanged;
   final Function(BookInfo) onBookChanged;
   final Function(int) onChapterChanged;
   final VoidCallback onTranslationTap;
@@ -463,6 +383,8 @@ class _TopBar extends StatelessWidget {
     required this.books,
     required this.chapterKeys,
     this.translationId,
+    required this.continuousReading,
+    required this.onContinuousReadingChanged,
     required this.onBookChanged,
     required this.onChapterChanged,
     required this.onTranslationTap,
@@ -563,10 +485,21 @@ class _TopBar extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              IconButton(
-                onPressed: () {},
-                icon: const Icon(Icons.more_vert),
-                color: colorScheme.onSurfaceVariant,
+              PopupMenuButton<String>(
+                icon: Icon(Icons.more_vert, color: colorScheme.onSurfaceVariant),
+                tooltip: 'Reader options',
+                onSelected: (value) {
+                  if (value == 'continuous') {
+                    onContinuousReadingChanged(!continuousReading);
+                  }
+                },
+                itemBuilder: (context) => [
+                  CheckedPopupMenuItem<String>(
+                    value: 'continuous',
+                    checked: continuousReading,
+                    child: const Text('Continuous reading'),
+                  ),
+                ],
               ),
             ],
           ),
@@ -578,15 +511,24 @@ class _TopBar extends StatelessWidget {
 
 // --- Reader Content Widget ---
 class _ReaderContent extends StatefulWidget {
-  final List<Verse> verses;
-  final String bookName;
-  final int chapter;
+  final _LoadedChapter initialChapter;
+  final bool continuousReading;
+  final String? prevLabel;
+  final String? nextLabel;
+  final VoidCallback? onPrev;
+  final VoidCallback? onNext;
+  final Future<_LoadedChapter?> Function(int book, int chapter) loadChapterAfter;
   final Function(String) onTextSelected;
 
   const _ReaderContent({
-    required this.verses,
-    required this.bookName,
-    required this.chapter,
+    super.key,
+    required this.initialChapter,
+    required this.continuousReading,
+    required this.prevLabel,
+    required this.nextLabel,
+    required this.onPrev,
+    required this.onNext,
+    required this.loadChapterAfter,
     required this.onTextSelected,
   });
 
@@ -596,6 +538,20 @@ class _ReaderContent extends StatefulWidget {
 
 class _ReaderContentState extends State<_ReaderContent> {
   final ScrollController _scrollController = ScrollController();
+  late final List<_LoadedChapter> _chapters = [widget.initialChapter];
+  bool _loadingNext = false;
+  bool _reachedEnd = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.continuousReading) {
+      _scrollController.addListener(_maybeLoadNext);
+      // A short chapter may not fill the viewport, leaving nothing to
+      // scroll — check once after the first layout.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _maybeLoadNext());
+    }
+  }
 
   @override
   void dispose() {
@@ -603,85 +559,188 @@ class _ReaderContentState extends State<_ReaderContent> {
     super.dispose();
   }
 
+  Future<void> _maybeLoadNext() async {
+    if (_loadingNext || _reachedEnd || !mounted) return;
+    if (!_scrollController.hasClients) return;
+    if (_scrollController.position.extentAfter > 800) return;
+
+    _loadingNext = true;
+    final last = _chapters.last;
+    final next = await widget.loadChapterAfter(last.book, last.chapter);
+    if (!mounted) return;
+    setState(() {
+      if (next == null || next.verses.isEmpty) {
+        _reachedEnd = true;
+      } else {
+        _chapters.add(next);
+      }
+      _loadingNext = false;
+    });
+    // The appended chapter may still not fill the viewport (short chapters).
+    if (next != null && next.verses.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _maybeLoadNext());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    //final theme = Theme.of(context);
+    //final colorScheme = theme.colorScheme;
+   // final onSurfaceVariant = colorScheme.onSurfaceVariant;
+
+    return Scrollbar(
+      controller: _scrollController,
+      child: SelectionArea(
+        // One selection region for the whole chapter so selection flows
+        // continuously across verses instead of per-verse islands.
+        onSelectionChanged: (selection) {
+          widget.onTextSelected(selection?.plainText ?? '');
+        },
+        child: ListView(
+          controller: _scrollController,
+          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+          children: [
+            for (var i = 0; i < _chapters.length; i++) ...[
+              if (i > 0) const SizedBox(height: 48),
+              _ChapterHeader(chapter: _chapters[i]),
+              const SizedBox(height: 48),
+              ..._chapters[i].verses.map((verse) {
+                return _VerseTile(
+                  verseNumber: verse.verse,
+                  text: verse.verseText,
+                );
+              }),
+            ],
+            const SizedBox(height: 48),
+            if (widget.continuousReading && !_reachedEnd)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Center(
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              )
+            else
+              _ChapterNavButtons(
+                prevLabel: widget.prevLabel,
+                nextLabel: widget.nextLabel,
+                onPrev: widget.onPrev,
+                onNext: widget.onNext,
+              ),
+            const SizedBox(height: 64),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// --- Chapter Header (book name + chapter number) ---
+class _ChapterHeader extends StatelessWidget {
+  final _LoadedChapter chapter;
+
+  const _ChapterHeader({required this.chapter});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Center(
+      child: Column(
+        children: [
+          Text(
+            chapter.bookName,
+            style: theme.textTheme.headlineLarge?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: colorScheme.primary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Chapter ${chapter.chapter}',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontStyle: FontStyle.italic,
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// --- Previous / Next chapter buttons ---
+class _ChapterNavButtons extends StatelessWidget {
+  final String? prevLabel;
+  final String? nextLabel;
+  final VoidCallback? onPrev;
+  final VoidCallback? onNext;
+
+  const _ChapterNavButtons({
+    required this.prevLabel,
+    required this.nextLabel,
+    required this.onPrev,
+    required this.onNext,
+  });
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final onSurfaceVariant = colorScheme.onSurfaceVariant;
 
-    return Scrollbar(
-      controller: _scrollController,
-      child: ListView(
-        controller: _scrollController,
-        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-        children: [
-          Center(
-            child: Column(
+    ButtonStyle style = TextButton.styleFrom(
+      side: BorderSide(color: colorScheme.outlineVariant),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(32)),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+    );
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        if (onPrev != null) ...[
+          TextButton(
+            onPressed: onPrev,
+            style: style,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
+                Icon(Icons.arrow_back, size: 18, color: onSurfaceVariant),
+                const SizedBox(width: 8),
                 Text(
-                  widget.bookName,
-                  style: theme.textTheme.headlineLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: colorScheme.primary,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Chapter ${widget.chapter}',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontStyle: FontStyle.italic,
+                  prevLabel!,
+                  style: theme.textTheme.bodyMedium?.copyWith(
                     color: onSurfaceVariant,
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 48),
-          ...widget.verses.map((verse) {
-            return _VerseTile(
-              verseNumber: verse.verse,
-              text: verse.verseText,
-              onSelected: (text) {
-                widget.onTextSelected(text);
-              },
-            );
-          }),
-          const SizedBox(height: 48),
-          Center(
-            child: TextButton(
-              onPressed: () {
-                // TODO: navigate to next chapter
-              },
-              style: TextButton.styleFrom(
-                side: BorderSide(
-                  color: colorScheme.outlineVariant,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(32),
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Continue to ${widget.bookName} ${widget.chapter + 1}',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Icon(
-                    Icons.arrow_forward,
-                    size: 18,
+          const SizedBox(width: 16),
+        ],
+        if (onNext != null)
+          TextButton(
+            onPressed: onNext,
+            style: style,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  nextLabel!,
+                  style: theme.textTheme.bodyMedium?.copyWith(
                     color: onSurfaceVariant,
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 8),
+                Icon(Icons.arrow_forward, size: 18, color: onSurfaceVariant),
+              ],
             ),
           ),
-          const SizedBox(height: 64),
-        ],
-      ),
+      ],
     );
   }
 }
@@ -690,12 +749,10 @@ class _ReaderContentState extends State<_ReaderContent> {
 class _VerseTile extends StatefulWidget {
   final int verseNumber;
   final String text;
-  final Function(String) onSelected;
 
   const _VerseTile({
     required this.verseNumber,
     required this.text,
-    required this.onSelected,
   });
 
   @override
@@ -712,14 +769,30 @@ class _VerseTileState extends State<_VerseTile> {
     final isDark = theme.brightness == Brightness.dark;
     final onSurfaceVariant = colorScheme.onSurfaceVariant;
 
+    final baseStyle = theme.textTheme.bodyLarge!.copyWith(
+      fontFamily: 'Literata',
+      fontSize: 16,
+      height: 1.6,
+      color: colorScheme.onSurface,
+    );
+
+    // Strip HTML, decode entities, and keep words-of-Christ segments
+    // (red-letter) via sentinel markers.
+    final normalized = normalizeResolvedScriptureText(
+      widget.text,
+      preserveWordsOfChrist: true,
+    );
+    final spans = buildScriptureSpans(
+      normalized,
+      baseStyle: baseStyle,
+      wordsOfChristColor: wordsOfChristColorFor(theme.brightness),
+    );
+
     return GestureDetector(
       onTap: () {
         setState(() {
           _isSelected = !_isSelected;
         });
-      },
-      onLongPress: () {
-        widget.onSelected(widget.text);
       },
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 4),
@@ -745,24 +818,7 @@ class _VerseTileState extends State<_VerseTile> {
             ),
             const SizedBox(width: 16),
             Expanded(
-              child: SelectableText(
-                widget.text,
-                style: theme.textTheme.bodyLarge?.copyWith(
-                  fontFamily: 'Source Serif 4',
-                  fontSize: 16,
-                  height: 1.6,
-                  color: colorScheme.onSurface,
-                ),
-                onSelectionChanged: (selection, cause) {
-                  if (selection.baseOffset != selection.extentOffset) {
-                    final selectedText = widget.text.substring(
-                      selection.baseOffset,
-                      selection.extentOffset,
-                    );
-                    widget.onSelected(selectedText);
-                  }
-                },
-              ),
+              child: Text.rich(TextSpan(children: spans)),
             ),
           ],
         ),

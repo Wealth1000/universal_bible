@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:drift/drift.dart';
 import 'package:path/path.dart' as p;
 import 'package:universal_bible/core/services/storage_service.dart';
+import 'package:universal_bible/core/utils/book_name_utils.dart';
 import '../../../../database/app_database.dart';
 import '../models/bible_bdat.dart'; // we'll define this
 import '../../../../services/download_service.dart';
@@ -90,7 +91,11 @@ class TranslationRepository {
     // Convert both maps to have string keys
     final bookMapJson = jsonEncode(_convertMapKeysToString(bdat.bookMap));
     final bookChaptersJson = jsonEncode(_convertMapKeysToString(bookChapters));
-
+    //Generate Display names for each book key
+    final displayNames = <String, String>{};
+    for (final key in bdat.bookMap.keys) {
+      displayNames[key] = cleanBookName(key);
+    }
     // Check if translation already exists
     final existing = await db.getTranslation(id);
     if (existing != null) {
@@ -105,6 +110,7 @@ class TranslationRepository {
           installedSizeBytes: Value(await file.length()),
           installedAt: Value(DateTime.now()),
           bookMapJson: Value(bookMapJson),
+          bookDisplayNamesJson: Value(jsonEncode(displayNames)),
           bookChapterCountsJson: Value(bookChaptersJson),
           filePath: Value(destPath),
         ),
@@ -124,6 +130,7 @@ class TranslationRepository {
               installedSizeBytes: Value(await file.length()),
               installedAt: Value(DateTime.now()),
               bookMapJson: Value(bookMapJson),
+              bookDisplayNamesJson: Value(jsonEncode(displayNames)),
               bookChapterCountsJson: Value(bookChaptersJson),
               filePath: Value(destPath),
             ),

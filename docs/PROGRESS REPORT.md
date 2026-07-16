@@ -163,6 +163,38 @@ All project documents (SRS, Architecture, Design System, Screen Map, Routes, Tim
 
 ---
 
+## 🔨 Work Log – 2026-07-15 (Scripture Formatting & Reader Fixes)
+
+### Batch 1: Scripture formatting utility ✅
+- Created `lib/core/utils/scripture_format.dart`:
+  - Ported the proven reference code verbatim: `convertIsusSpansToJTags()` (converts `<span class='Isus'>` → `<J>` tags) and `normalizeResolvedScriptureText()` (strips HTML tags — `<br>`, `<p>`, `<li>`, `<i>`, `<span>`, etc. — decodes HTML entities, normalises whitespace, drops quote-only lines).
+  - Added sentinel constants `wordsOfChristOpenMarker` / `wordsOfChristCloseMarker` (Unicode private-use chars U+E000/U+E001) so the words-of-Christ distinction survives the generic tag strip.
+  - Added `buildScriptureSpans()` — splits normalised text on the sentinels and returns `TextSpan`s with red-letter styling for words of Christ.
+  - Added `wordsOfChristColorFor(Brightness)` — theme-aware red (deep red on light, lighter red on dark).
+
+### Batch 2: Desktop Reader – formatting + selection flicker fix ✅
+- `reader_page_desktop.dart`:
+  - **Formatting**: every verse is now passed through `normalizeResolvedScriptureText(..., preserveWordsOfChrist: true)` and rendered with `buildScriptureSpans()` — HTML tags/entities are gone and words of Christ render in red (red-letter edition).
+  - **Flicker root cause fixed**: the verses `Future` was recreated inside `build()` on *every* `setState`, so any selection-driven rebuild made `FutureBuilder` re-enter its loading state → reader flickered and the selection was destroyed. The future is now cached in state (`_ensureVersesFuture`) and only recreated when `(translation, book, chapter)` actually changes.
+  - **Cross-verse selection**: replaced per-verse `SelectableText` (isolated selection islands) with a single `SelectionArea` wrapping the whole chapter — text selection now flows continuously across verses.
+  - Selection FAB callback is guarded to only `setState` when the selected text actually changes (no rebuild churn during drag).
+  - Verse tap still toggles the per-verse highlight.
+
+### Batch 3: Mobile Reader – formatting + selection flicker fix ✅
+- `reader_page_mobile.dart`:
+  - **Formatting**: same treatment as desktop — verses normalised via `normalizeResolvedScriptureText(..., preserveWordsOfChrist: true)` and rendered with `buildScriptureSpans()` (red-letter support).
+  - **Flicker fix**: same future-caching fix as desktop (`_ensureVersesFuture`) — verse taps / context-menu `setState` calls no longer recreate the verses future, so the reader no longer flickers back to the loading spinner.
+  - **Text selection**: chapter verse list wrapped in a single `SelectionArea`, so long-press text selection works and flows continuously across verses. Verse tap / long-press context-menu behaviour is unchanged.
+
+### Batch 4: Literata as default reader font ✅
+- Replaced `fontFamily: 'Source Serif 4'` (never bundled) with `fontFamily: 'Literata'` in both `reader_page_desktop.dart` and `reader_page_mobile.dart`.
+- Literata regular + italic are already in `assets/fonts/` and declared in `pubspec.yaml`, so scripture text now renders in a real, bundled serif face on every platform.
+
+### Summary of this work log
+The reader now renders **clean, formatted scripture**: raw `.bdat` HTML (`<br>`, `<p>`, `<i>`, `<span>`, entities) is normalised by the proven `normalizeResolvedScriptureText()` pipeline (ported verbatim from the reference project) in the new `lib/core/utils/scripture_format.dart`, with **red-letter words of Christ** preserved via `<span class='Isus'>` → `<J>` → sentinel conversion and rendered through `buildScriptureSpans()`. The **selection flicker bug is fixed** on both desktop and mobile — its root cause was the verses `Future` being recreated on every rebuild, forcing `FutureBuilder` back into its loading state; the future is now cached per `(translation, book, chapter)`. Per-verse `SelectableText` islands were replaced with a single `SelectionArea` per chapter, so **text selection flows continuously across verses** without interruption, and the desktop selection FAB only rebuilds when the selection actually changes. Finally, the reader's default typeface is now **Literata** (regular + italic, bundled in assets), replacing the unbundled 'Source Serif 4'.
+
+---
+
 ## 🏁 Conclusion
 
 We have a **solid, working offline Bible reader** with translation management and customisation. The foundation is stable, and we are ready to add study features and synchronisation. The first successful import marks a key milestone. 🎉
