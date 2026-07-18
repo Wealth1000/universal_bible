@@ -1,0 +1,29 @@
+# Static analysis only on release branch (no tests — see test/widget_test.dart placeholder).
+name: Flutter CI
+
+on:
+  push:
+    branches: [release]
+  pull_request:
+    branches: [release]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "stable"
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
