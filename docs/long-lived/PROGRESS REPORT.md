@@ -198,3 +198,34 @@ The reader now renders **clean, formatted scripture**: raw `.bdat` HTML (`<br>`,
 ## 🏁 Conclusion
 
 We have a **solid, working offline Bible reader** with translation management and customisation. The foundation is stable, and we are ready to add study features and synchronisation. The first successful import marks a key milestone. 🎉
+---
+
+## 🔨 Work Log – 2026-07-18 (Reading-Position Persistence + Translation Pill)
+
+Plan: docs/PLAN.md · Discovery: docs/CONTEXT.md
+
+### Batch 1: Persistence layer (StorageService keys + readingPositionProvider) — ✅
+- `StorageService`: `reading_position.translation/book/chapter` SharedPreferences keys, `saveReadingPosition()`, `saveReadingTranslation()` (translation component only), sync `lastReadingPosition` getter (`ReadingPositionRecord`).
+- `database_provider.dart`: `ReadingPosition` value class + `readingPositionProvider`; `save()` debounced 400 ms (scroll fires per frame) with no-op guard; `saveTranslationOnly()` cancels any pending debounced save (it carries the old translation id) and writes through immediately, preserving book/chapter.
+
+### Batch 2: Restore on startup — ✅
+- Both reader pages' `_loadBooks()`: translation resolution is now `in-session value ?? persisted (if still installed) ?? translations.first`; the null-defaults for book/chapter use the persisted position when it is valid in the loaded book map (book exists AND chapter present in its chapterCounts), falling back to first book / first chapter otherwise. Persisted chapter is only applied together with the persisted book (never mixed with a different in-session book). Mobile re-derives `_chapterCounts` from the effective (possibly restored) book.
+
+### Batch 3: Save on navigation & scroll — ✅
+- Both pages: `_persistPosition(book, chapter)` helper; called from `_goTo`, the desktop chapter dropdown handler, and the mobile chapter-picker sheet.
+- `_updateVisibleChapter` (both scroll widgets) now persists the visually-centered chapter's `(book, chapter)` alongside `visibleChapterProvider` — continuous-mode reading and cross-book drift are persisted without any tap navigation. Debounce lives in the notifier, so the per-frame listener stays cheap.
+- Mobile `_updateChapterCounts` clamp also persists the clamped position (restore can never point at a chapter the translation lacks).
+
+### Batch 4: §2 Translation pill + adaptive grid dropdown — ✅
+- New shared widget `lib/features/bible/presentation/widgets/translation_grid.dart`:
+  - `TranslationGrid` — adaptive `Wrap` of content-sized cells (abbreviation large/bold + full name small secondary), active translation highlighted (primaryContainer bg + primary border), each cell a focusable `InkWell` with `Semantics(button: true)`. Data from `translationRepoProvider.getInstalled()`.
+  - ≤1 installed translation → single cell plus an "Install more translations" prompt navigating to `/translations`.
+  - Tap handler sets `currentTranslationProvider` + `readingPositionProvider.saveTranslationOnly()` ONLY — book/chapter untouched, so 1 Kings 5 [NKJV] → NLT stays at 1 Kings 5.
+  - `showTranslationGridDropdown()` — desktop anchored overlay below the pill (transparent-barrier dialog positioned from the pill's RenderBox; tap-outside dismisses). `showTranslationGridSheet()` — mobile modal bottom sheet (retained; mobile route itself remains disabled per DECISIONS.md).
+- Desktop `_TopBar`: translation `TextButton` is now the pill (StadiumBorder, primaryContainer colors, expand-more icon) with semantic label "Active translation: [full name]. Tap to switch." (full name threaded from `_loadBooks()`); the old `onTranslationTap` TODO now opens the anchored grid via `_translationPillKey`.
+- Content is keyed on `'$translationId|$book|$chapter|...'`, so switching translation reloads verses at the same book/chapter with no extra reload logic; `_loadBooks()` clamps only when the new translation genuinely lacks the current book/chapter.
+- Fixed `ReadingPosition` ambiguous-import analyzer errors in both reader pages: `app_database.dart` (Drift row class of the same name) is now imported with `hide ReadingPosition`, so the value class from `core/providers/database_provider.dart` resolves unambiguously.
+
+### Batch 5: Docs close-out — ✅
+- PLANNED_FEATURES.md: §2 marked ✅ Done, header status updated, note added about the reading-position persistence addition and the pill preserving book/chapter.
+- This work log finalized (all batches ✅).

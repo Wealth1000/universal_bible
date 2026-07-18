@@ -1,15 +1,19 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:universal_bible/core/providers/translation_repo_provider.dart';
 import 'package:universal_bible/core/utils/book_name_utils.dart';
 import 'package:universal_bible/core/utils/scripture_format.dart';
-import 'package:universal_bible/database/app_database.dart';
+import 'package:universal_bible/database/app_database.dart'
+    hide ReadingPosition;
 import 'package:universal_bible/features/settings/domain/book_name_settings_provider.dart';
 import 'package:universal_bible/features/bible/domain/book_info.dart';
 import 'package:universal_bible/features/bible/domain/chapter_navigation.dart';
 import 'package:universal_bible/features/bible/domain/continuous_reading_provider.dart';
 import 'package:universal_bible/features/bible/domain/reader_provider.dart';
+import 'package:universal_bible/features/bible/presentation/widgets/translation_grid.dart';
 import 'dart:convert';
 import '../../../../core/providers/database_provider.dart';
 
@@ -39,9 +43,13 @@ class ReaderPageDesktop extends ConsumerStatefulWidget {
 
 class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
   List<BookInfo>? _books;
+  // Full name of the active translation, for the pill's semantic label.
+  String? _translationName;
   bool _isLoading = true;
   bool _selectionFabVisible = false;
   String _selectedText = '';
+  // Anchor for the translation pill's grid dropdown.
+  final GlobalKey _translationPillKey = GlobalKey();
 
   // Cache the verses future so unrelated setState calls (selection FAB,
   // verse taps) don't recreate it — recreating it makes FutureBuilder
@@ -83,8 +91,16 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
       return;
     }
 
+    // Persisted position (survives restarts). Only fills providers that
+    // are still null, so in-session navigation is never overridden.
+    final persisted = ref.read(readingPositionProvider);
+
     final currentTransId = ref.read(currentTranslationProvider);
-    final transId = currentTransId ?? translations.first.id;
+    final persistedTransId =
+        translations.any((t) => t.id == persisted?.translationId)
+        ? persisted?.translationId
+        : null;
+    final transId = currentTransId ?? persistedTransId ?? translations.first.id;
     if (currentTransId == null) {
       ref.read(currentTranslationProvider.notifier).set(transId);
     }
@@ -133,18 +149,63 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
 
     setState(() {
       _books = books;
+      _translationName = trans.name;
       _isLoading = false;
       final currentBook = ref.read(currentBookProvider);
       final currentChapter = ref.read(currentChapterProvider);
+      // Persisted book/chapter are used only when valid in THIS book map
+      // (a different translation may lack them); otherwise first book /
+      // first chapter as before.
+      BookInfo? persistedBookInfo;
+      if (persisted != null) {
+        for (final b in books) {
+          if (b.number == persisted.book) {
+            persistedBookInfo = b;
+            break;
+          }
+        }
+      }
       if (currentBook == null && books.isNotEmpty) {
-        ref.read(currentBookProvider.notifier).set(books.first.number);
+        ref
+            .read(currentBookProvider.notifier)
+            .set(persistedBookInfo?.number ?? books.first.number);
       }
       if (currentChapter == null && books.isNotEmpty) {
-        final firstBook = books.first;
-        final firstChapter = firstBook.chapterCounts.keys.isNotEmpty
-            ? firstBook.chapterCounts.keys.first
-            : 1;
-        ref.read(currentChapterProvider.notifier).set(firstChapter);
+        // Persisted chapter applies only when the book also came from the
+        // persisted position (currentBook was null too).
+        final usePersisted = currentBook == null && persistedBookInfo != null;
+        final targetBook = usePersisted ? persistedBookInfo : books.first;
+        final int chapterToSet;
+        if (usePersisted &&
+            persistedBookInfo.chapterCounts.containsKey(persisted!.chapter)) {
+          chapterToSet = persisted.chapter;
+        } else {
+          chapterToSet = targetBook.chapterCounts.keys.isNotEmpty
+              ? (targetBook.chapterCounts.keys.toList()..sort()).first
+              : 1;
+        }
+        ref.read(currentChapterProvider.notifier).set(chapterToSet);
+      }
+      // After a translation switch the in-session book/chapter may not
+      // exist in the new book map — clamp (don't reset) so the reader
+      // shows real content. Mirrors mobile's _updateChapterCounts.
+      if (currentBook != null && books.isNotEmpty) {
+        final bookExists = books.any((b) => b.number == currentBook);
+        final effectiveBookNum = bookExists ? currentBook : books.first.number;
+        if (!bookExists) {
+          ref.read(currentBookProvider.notifier).set(effectiveBookNum);
+        }
+        final bookInfo =
+            books.firstWhere((b) => b.number == effectiveBookNum);
+        final chapterNow = ref.read(currentChapterProvider);
+        if (chapterNow != null &&
+            !bookInfo.chapterCounts.containsKey(chapterNow)) {
+          final firstChapter = bookInfo.chapterCounts.keys.isNotEmpty
+              ? (bookInfo.chapterCounts.keys.toList()..sort()).first
+              : 1;
+          ref.read(currentChapterProvider.notifier).set(firstChapter);
+          _persistPosition(effectiveBookNum, firstChapter);
+        }
       }
     });
   }
@@ -152,6 +213,20 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
   void _goTo(ChapterRef target) {
     ref.read(currentBookProvider.notifier).set(target.book);
     ref.read(currentChapterProvider.notifier).set(target.chapter);
+    _persistPosition(target.book, target.chapter);
+  }
+
+  /// Persists (translation, book, chapter) so the reader reopens here.
+  void _persistPosition(int book, int chapter) {
+    final translationId = ref.read(currentTranslationProvider);
+    if (translationId == null) return;
+    ref.read(readingPositionProvider.notifier).save(
+          ReadingPosition(
+            translationId: translationId,
+            book: book,
+            chapter: chapter,
+          ),
+        );
   }
 
   /// Loads the chapter after (book, chapter), crossing book boundaries.
@@ -175,11 +250,39 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
     );
   }
 
+  /// Loads the chapter before (book, chapter), crossing book boundaries.
+  /// Returns null at the beginning of the first book.
+  Future<_LoadedChapter?> _loadChapterBefore(int book, int chapter) async {
+    final books = _books;
+    final translationId = ref.read(currentTranslationProvider);
+    if (books == null || translationId == null) return null;
+
+    final target = prevChapterRef(books, book, chapter);
+    if (target == null) return null;
+
+    final verses = await ref
+        .read(databaseProvider)
+        .getVersesForChapter(translationId, target.book, target.chapter);
+    return _LoadedChapter(
+      book: target.book,
+      chapter: target.chapter,
+      bookName: bookNameFor(books, target),
+      verses: verses,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // Rebuild book names when the "preserve original names" toggle changes.
     ref.listen(preserveOriginalBookNamesProvider, (prev, next) {
       if (prev != next) _loadBooks();
+    });
+    // Reload the book map when the translation changes (pill switch) —
+    // book names / chapter counts differ per translation. Book & chapter
+    // providers are non-null here, so _loadBooks leaves them untouched
+    // and the reader stays at the same position.
+    ref.listen(currentTranslationProvider, (prev, next) {
+      if (prev != null && next != null && prev != next) _loadBooks();
     });
 
     final theme = Theme.of(context);
@@ -194,6 +297,9 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
     final book = ref.watch(currentBookProvider);
     final chapter = ref.watch(currentChapterProvider);
     final continuousReading = ref.watch(continuousReadingProvider);
+
+    // Read the visible chapter for the AppBar label (from scroll-follow).
+    final visibleChapter = ref.watch(visibleChapterProvider) ?? chapter;
 
     if (_isLoading) {
       return Scaffold(
@@ -249,10 +355,12 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
           // Top Bar
           _TopBar(
             bookName: bookName,
-            chapter: currentChapter,
+            chapter: currentChapter,        // for dropdown value
+            displayChapter: visibleChapter, // for the label
             books: _books!,
             chapterKeys: chapterKeys,
             translationId: translationId,
+            translationName: _translationName,
             continuousReading: continuousReading,
             onContinuousReadingChanged: (value) {
               ref.read(continuousReadingProvider.notifier).set(value);
@@ -265,10 +373,15 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
             },
             onChapterChanged: (newChapter) {
               ref.read(currentChapterProvider.notifier).set(newChapter);
+              _persistPosition(currentBook, newChapter);
             },
             onTranslationTap: () {
-              // TODO: Show translation switcher
+              showTranslationGridDropdown(
+                context,
+                anchorKey: _translationPillKey,
+              );
             },
+            translationPillKey: _translationPillKey,
           ),
           // Scripture Content
           Expanded(
@@ -314,6 +427,7 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
                   onPrev: prevRef == null ? null : () => _goTo(prevRef),
                   onNext: nextRef == null ? null : () => _goTo(nextRef),
                   loadChapterAfter: _loadChapterAfter,
+                  loadChapterBefore: _loadChapterBefore,
                   onTextSelected: (text) {
                     // Only rebuild when the state actually changes —
                     // rebuilding during a selection drag causes churn.
@@ -367,27 +481,33 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
 // --- Top Bar Widget ---
 class _TopBar extends StatelessWidget {
   final String bookName;
-  final int chapter;
+  final int chapter;            // value for chapter dropdown
+  final int? displayChapter;     // displayed in the label (can follow scroll)
   final List<BookInfo> books;
   final List<int> chapterKeys;
   final String? translationId;
+  final String? translationName;
   final bool continuousReading;
   final ValueChanged<bool> onContinuousReadingChanged;
   final Function(BookInfo) onBookChanged;
   final Function(int) onChapterChanged;
   final VoidCallback onTranslationTap;
+  final GlobalKey? translationPillKey;
 
   const _TopBar({
     required this.bookName,
     required this.chapter,
+    required this.displayChapter,
     required this.books,
     required this.chapterKeys,
     this.translationId,
+    this.translationName,
     required this.continuousReading,
     required this.onContinuousReadingChanged,
     required this.onBookChanged,
     required this.onChapterChanged,
     required this.onTranslationTap,
+    this.translationPillKey,
   });
 
   @override
@@ -397,6 +517,7 @@ class _TopBar extends StatelessWidget {
     final isDark = theme.brightness == Brightness.dark;
     final primaryColor = isDark ? colorScheme.primary : const Color(0xFF2E434C);
     final surfaceColor = colorScheme.surface;
+    final chapterToShow = displayChapter ?? chapter;
 
     // Use the actual translation ID or a fallback
     final displayTranslation = translationId?.toUpperCase() ?? 'KJV';
@@ -444,7 +565,10 @@ class _TopBar extends StatelessWidget {
               ),
               const SizedBox(width: 16),
               DropdownButton<int>(
-                value: chapter,
+                // Show whichever chapter is currently visible on screen.
+                // Fall back to the navigation chapter if the visible one is
+                // not in the current book's list (e.g. cross-book scroll).
+                value: chapterKeys.contains(chapterToShow) ? chapterToShow : chapter,
                 items: chapterKeys.map((ch) {
                   return DropdownMenuItem<int>(
                     value: ch,
@@ -467,21 +591,39 @@ class _TopBar extends StatelessWidget {
           ),
           Row(
             children: [
-              TextButton(
-                onPressed: onTranslationTap,
-                style: TextButton.styleFrom(
-                  backgroundColor: colorScheme.primaryContainer,
-                  foregroundColor: colorScheme.onPrimaryContainer,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+              // Chapter label is shown separately above the dropdown; it's
+              // already displayed in the dropdown's value – we can keep it
+              // as is, but for clarity we'll also show a static label.
+              // Padding(
+              //   padding: const EdgeInsets.symmetric(horizontal: 8.0),
+              //   child: Text(
+              //     'Chapter $chapterToShow',
+              //     style: theme.textTheme.titleMedium?.copyWith(
+              //       fontWeight: FontWeight.w700,
+              //       color: primaryColor,
+              //     ),
+              //   ),
+              // ),
+              // Translation pill (§2): opens the grid dropdown.
+              Semantics(
+                button: true,
+                label:
+                    'Active translation: ${translationName ?? displayTranslation}. Tap to switch.',
+                child: TextButton(
+                  key: translationPillKey,
+                  onPressed: onTranslationTap,
+                  style: TextButton.styleFrom(
+                    backgroundColor: colorScheme.primaryContainer,
+                    foregroundColor: colorScheme.onPrimaryContainer,
+                    shape: const StadiumBorder(),
                   ),
-                ),
-                child: Row(
-                  children: [
-                    Text(displayTranslation),
-                    const SizedBox(width: 4),
-                    const Icon(Icons.translate, size: 18),
-                  ],
+                  child: Row(
+                    children: [
+                      Text(displayTranslation),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.expand_more, size: 18),
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
@@ -510,7 +652,7 @@ class _TopBar extends StatelessWidget {
 }
 
 // --- Reader Content Widget ---
-class _ReaderContent extends StatefulWidget {
+class _ReaderContent extends ConsumerStatefulWidget {
   final _LoadedChapter initialChapter;
   final bool continuousReading;
   final String? prevLabel;
@@ -518,6 +660,7 @@ class _ReaderContent extends StatefulWidget {
   final VoidCallback? onPrev;
   final VoidCallback? onNext;
   final Future<_LoadedChapter?> Function(int book, int chapter) loadChapterAfter;
+  final Future<_LoadedChapter?> Function(int book, int chapter) loadChapterBefore;
   final Function(String) onTextSelected;
 
   const _ReaderContent({
@@ -529,110 +672,222 @@ class _ReaderContent extends StatefulWidget {
     required this.onPrev,
     required this.onNext,
     required this.loadChapterAfter,
+    required this.loadChapterBefore,
     required this.onTextSelected,
   });
 
   @override
-  State<_ReaderContent> createState() => _ReaderContentState();
+  ConsumerState<_ReaderContent> createState() => _ReaderContentState();
 }
 
-class _ReaderContentState extends State<_ReaderContent> {
+class _ReaderContentState extends ConsumerState<_ReaderContent> {
   final ScrollController _scrollController = ScrollController();
+  final GlobalKey _scrollKey = GlobalKey();
   late final List<_LoadedChapter> _chapters = [widget.initialChapter];
+  final List<GlobalKey> _chapterHeaderKeys = [GlobalKey()];
   bool _loadingNext = false;
   bool _reachedEnd = false;
+  bool _loadingPrev = false;
+  bool _reachedStart = false;
+
+  // Cooldown timer to prevent rapid successive loading.
+  Timer? _loadCooldownTimer;
 
   @override
   void initState() {
     super.initState();
+    // Set the visible chapter after the first frame to avoid modifying provider during build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(visibleChapterProvider.notifier).set(widget.initialChapter.chapter);
+      }
+    });
+
+    // Always track which chapter header is visually centred.
+    _scrollController.addListener(_updateVisibleChapter);
+
     if (widget.continuousReading) {
       _scrollController.addListener(_maybeLoadNext);
-      // A short chapter may not fill the viewport, leaving nothing to
-      // scroll — check once after the first layout.
+      _scrollController.addListener(_maybeLoadPrev);
+      // Prefetch the next chapter once after layout if we have room.
       WidgetsBinding.instance.addPostFrameCallback((_) => _maybeLoadNext());
     }
   }
 
   @override
   void dispose() {
+    _loadCooldownTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  /// Updates [visibleChapterProvider] to the chapter whose header was most
+  /// recently above the vertical midpoint of the viewport.
+  void _updateVisibleChapter() {
+    if (!mounted || !_scrollController.hasClients) return;
+
+    final listCtx = _scrollKey.currentContext;
+    if (listCtx == null) return;
+    final listBox = listCtx.findRenderObject() as RenderBox?;
+    if (listBox == null) return;
+
+    final halfViewport = _scrollController.position.viewportDimension * 0.5;
+
+    for (var i = _chapterHeaderKeys.length - 1; i >= 0; i--) {
+      final headerCtx = _chapterHeaderKeys[i].currentContext;
+      if (headerCtx == null) continue;
+      final headerBox = headerCtx.findRenderObject() as RenderBox?;
+      if (headerBox == null) continue;
+
+      final topInViewport =
+          listBox.globalToLocal(headerBox.localToGlobal(Offset.zero)).dy;
+
+      if (topInViewport <= halfViewport) {
+        ref.read(visibleChapterProvider.notifier).set(_chapters[i].chapter);
+        // Persist the centered chapter so the reader reopens here — this
+        // covers continuous-mode reading (incl. cross-book drift), which
+        // never goes through navigation. Debounced inside the notifier.
+        final translationId = ref.read(currentTranslationProvider);
+        if (translationId != null) {
+          ref.read(readingPositionProvider.notifier).save(
+                ReadingPosition(
+                  translationId: translationId,
+                  book: _chapters[i].book,
+                  chapter: _chapters[i].chapter,
+                ),
+              );
+        }
+        return;
+      }
+    }
   }
 
   Future<void> _maybeLoadNext() async {
     if (_loadingNext || _reachedEnd || !mounted) return;
     if (!_scrollController.hasClients) return;
-    if (_scrollController.position.extentAfter > 800) return;
+    // Increase threshold: only load when there's more than 1500px of scroll
+    // space left before the end of the current content.
+    if (_scrollController.position.extentAfter > 1500) return;
 
     _loadingNext = true;
     final last = _chapters.last;
     final next = await widget.loadChapterAfter(last.book, last.chapter);
-    if (!mounted) return;
+    if (!mounted) {
+      _loadingNext = false;
+      return;
+    }
     setState(() {
       if (next == null || next.verses.isEmpty) {
         _reachedEnd = true;
       } else {
         _chapters.add(next);
+        _chapterHeaderKeys.add(GlobalKey());
       }
       _loadingNext = false;
     });
-    // The appended chapter may still not fill the viewport (short chapters).
+
+    // If we loaded a chapter, schedule another check after a cooldown.
     if (next != null && next.verses.isNotEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _maybeLoadNext());
+      _loadCooldownTimer?.cancel();
+      _loadCooldownTimer = Timer(const Duration(milliseconds: 300), () {
+        if (mounted) {
+          _maybeLoadNext();
+        }
+      });
     }
+  }
+
+  Future<void> _maybeLoadPrev() async {
+    if (_loadingPrev || _reachedStart || !mounted) return;
+    if (!_scrollController.hasClients) return;
+    // Only load when scrolled within 100px of the top.
+    if (_scrollController.position.pixels > 100) return;
+
+    _loadingPrev = true;
+    final first = _chapters.first;
+    final prev = await widget.loadChapterBefore(first.book, first.chapter);
+    if (!mounted) {
+      _loadingPrev = false;
+      return;
+    }
+    if (prev == null || prev.verses.isEmpty) {
+      setState(() {
+        _reachedStart = true;
+        _loadingPrev = false;
+      });
+      return;
+    }
+
+    // Capture current max extent before insertion.
+    final oldMaxExtent = _scrollController.hasClients
+        ? _scrollController.position.maxScrollExtent
+        : 0.0;
+
+    setState(() {
+      _chapters.insert(0, prev);
+      _chapterHeaderKeys.insert(0, GlobalKey());
+    });
+
+    // After layout, jump forward by the height of the inserted content so
+    // the viewport still shows the same verses.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) {
+        _loadingPrev = false;
+        return;
+      }
+      final newMaxExtent = _scrollController.position.maxScrollExtent;
+      final delta = newMaxExtent - oldMaxExtent;
+      if (delta > 0) {
+        _scrollController.jumpTo(_scrollController.position.pixels + delta);
+      }
+      _loadingPrev = false;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    //final theme = Theme.of(context);
-    //final colorScheme = theme.colorScheme;
-   // final onSurfaceVariant = colorScheme.onSurfaceVariant;
-
-    return Scrollbar(
-      controller: _scrollController,
-      child: SelectionArea(
-        // One selection region for the whole chapter so selection flows
-        // continuously across verses instead of per-verse islands.
-        onSelectionChanged: (selection) {
-          widget.onTextSelected(selection?.plainText ?? '');
-        },
-        child: ListView(
-          controller: _scrollController,
-          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-          children: [
-            for (var i = 0; i < _chapters.length; i++) ...[
-              if (i > 0) const SizedBox(height: 48),
-              _ChapterHeader(chapter: _chapters[i]),
-              const SizedBox(height: 48),
-              ..._chapters[i].verses.map((verse) {
-                return _VerseTile(
-                  verseNumber: verse.verse,
-                  text: verse.verseText,
-                );
-              }),
-            ],
+    // Removed Scrollbar wrapper as requested.
+    return SelectionArea(
+      onSelectionChanged: (selection) {
+        widget.onTextSelected(selection?.plainText ?? '');
+      },
+      child: ListView(
+        key: _scrollKey,
+        controller: _scrollController,
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+        children: [
+          for (var i = 0; i < _chapters.length; i++) ...[
+            if (i > 0) const SizedBox(height: 48),
+            _ChapterHeader(key: _chapterHeaderKeys[i], chapter: _chapters[i]),
             const SizedBox(height: 48),
-            if (widget.continuousReading && !_reachedEnd)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: Center(
-                  child: SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                ),
-              )
-            else
-              _ChapterNavButtons(
-                prevLabel: widget.prevLabel,
-                nextLabel: widget.nextLabel,
-                onPrev: widget.onPrev,
-                onNext: widget.onNext,
-              ),
-            const SizedBox(height: 64),
+            ..._chapters[i].verses.map((verse) {
+              return _VerseTile(
+                verseNumber: verse.verse,
+                text: verse.verseText,
+              );
+            }),
           ],
-        ),
+          const SizedBox(height: 48),
+          if (widget.continuousReading && !_reachedEnd)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            )
+          else
+            _ChapterNavButtons(
+              prevLabel: widget.prevLabel,
+              nextLabel: widget.nextLabel,
+              onPrev: widget.onPrev,
+              onNext: widget.onNext,
+            ),
+          const SizedBox(height: 64),
+        ],
       ),
     );
   }
@@ -642,7 +897,7 @@ class _ReaderContentState extends State<_ReaderContent> {
 class _ChapterHeader extends StatelessWidget {
   final _LoadedChapter chapter;
 
-  const _ChapterHeader({required this.chapter});
+  const _ChapterHeader({super.key, required this.chapter});
 
   @override
   Widget build(BuildContext context) {

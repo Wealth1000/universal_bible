@@ -3,7 +3,8 @@ import 'package:universal_bible/core/shell/app_shell.dart';
 import 'package:universal_bible/features/auth/presentation/pages/welcome_page.dart';
 import 'package:universal_bible/features/auth/presentation/pages/login_page.dart';
 import 'package:universal_bible/features/bible/presentation/pages/reader_page_desktop.dart';
-import 'package:universal_bible/features/bible/presentation/pages/reader_page_mobile.dart';
+//import 'package:universal_bible/features/bible/presentation/pages/reader_page_mobile.dart';
+import 'package:universal_bible/features/search/presentation/pages/search_page_desktop.dart';
 import 'package:universal_bible/features/settings/presention/pages/settings_page.dart';
 import 'package:universal_bible/features/translation_manager/presentation/pages/translation_manager_page.dart';
 import 'package:universal_bible/core/providers/translation_repo_provider.dart';
@@ -34,10 +35,10 @@ final appRouter = GoRouter(
           path: '/reader',
           builder: (context, state) => const ReaderPageDesktop(),
         ),
-        GoRoute(
-          path: '/reader_mobile',
-          builder: (context, state) => const ReaderPageMobile(),
-        ),
+        // GoRoute(
+        //   path: '/reader_mobile',
+        //   builder: (context, state) => const ReaderPageMobile(),
+        // ),
         GoRoute(
           path: '/translations',
           builder: (context, state) => const TranslationManagerPage(),
@@ -45,6 +46,10 @@ final appRouter = GoRouter(
         GoRoute(
           path: '/settings',
           builder: (context, state) => const SettingsPage(),
+        ),
+        GoRoute(
+          path: '/search',
+          builder: (context, state) => const SearchPageDesktop(),
         ),
       ],
     ),

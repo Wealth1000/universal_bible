@@ -43,7 +43,7 @@ class _NavItem {
 
 const _mainItems = [
   _NavItem(Icons.menu_book_outlined, Icons.menu_book, 'Bible', '/reader'),
-  _NavItem(Icons.search, Icons.search, 'Search', null),
+  _NavItem(Icons.search, Icons.search, 'Search', '/search'),
   _NavItem(
     Icons.translate_outlined,
     Icons.translate,

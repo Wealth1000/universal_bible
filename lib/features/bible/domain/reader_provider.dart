@@ -1,4 +1,3 @@
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class CurrentTranslationNotifier extends Notifier<String?> {
@@ -19,10 +18,25 @@ class CurrentChapterNotifier extends Notifier<int?> {
   void set(int? chapter) => state = chapter;
 }
 
+final currentChapterProvider = NotifierProvider<CurrentChapterNotifier, int?>(
+  CurrentChapterNotifier.new,
+);
+
+// --- Visible Chapter Provider (display-only, follows scroll) ---
+class VisibleChapterNotifier extends Notifier<int?> {
+  @override
+  int? build() => null;
+
+  void set(int? chapter) => state = chapter;
+}
 
 final currentTranslationProvider =
-    NotifierProvider<CurrentTranslationNotifier, String?>(CurrentTranslationNotifier.new);
-final currentBookProvider =
-    NotifierProvider<CurrentBookNotifier, int?>(CurrentBookNotifier.new);
-final currentChapterProvider =
-    NotifierProvider<CurrentChapterNotifier, int?>(CurrentChapterNotifier.new);
+    NotifierProvider<CurrentTranslationNotifier, String?>(
+      CurrentTranslationNotifier.new,
+    );
+final currentBookProvider = NotifierProvider<CurrentBookNotifier, int?>(
+  CurrentBookNotifier.new,
+);
+final visibleChapterProvider = NotifierProvider<VisibleChapterNotifier, int?>(
+  VisibleChapterNotifier.new,
+);

@@ -3,6 +3,8 @@
 Why things are the way they are. Small models rely on this — keep it current.
 Format: **Decision** → rationale. Newest at the bottom of each section.
 
+UNTIL FURTHER NOTICE, MOBILE specific data shall not be developed. this goes accross screens and providers and whatever. ergo, this app is a desktop app until further notice.
+
 ## Architecture
 
 - **Offline-first, "Local First → Sync Later."** Reading must never require internet. Local Drift/SQLite is the source of truth; every write goes local → UI → (future) queued background sync.
@@ -31,6 +33,8 @@ Format: **Decision** → rationale. Newest at the bottom of each section.
 - **Red-letter rendering via Unicode private-use sentinels** (U+E000/E001) because they survive HTML stripping; converting `<span class='Isus'>` → styled spans directly would couple the parser to the renderer.
 - **Reader perf (2026-07-15):** verses Future is cached per (translation, book, chapter) instead of recreated in `build()` — fixes selection-destroying flicker; one `SelectionArea` per chapter (not per-verse `SelectableText`) — enables continuous cross-verse selection.
 - **flutter_native_splash** for Android/iOS only, colors match design-system surfaces (#F8F9FA / #121212).
+- **Reading position persists in SharedPreferences, not Drift (2026-07-18).** `reading_position.*` keys in `StorageService` + `readingPositionProvider` (`database_provider.dart`); prefs load sync before runApp so restore has no async gap. The Drift `reading_positions` table stays for future sync. Saves are debounced 400 ms (scroll listener fires per frame). ⚠️ Naming hazard: the Drift row class is also called `ReadingPosition` — reader pages import `app_database.dart` with `hide ReadingPosition`.
+- **Translation switching never touches book/chapter (2026-07-18).** The §2 pill grid (`translation_grid.dart`) sets `currentTranslationProvider` + `saveTranslationOnly()` only; reader content keyed on `'$translationId|$book|$chapter|…'` reloads verses in place. `_loadBooks()` clamps only when the new translation genuinely lacks the current book/chapter.
 
 ## Storage & config
 
