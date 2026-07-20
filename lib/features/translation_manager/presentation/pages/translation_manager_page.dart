@@ -209,6 +209,13 @@ class _TranslationManagerPageState
       elevation: 0,
       automaticallyImplyLeading: false,
       backgroundColor: theme.scaffoldBackgroundColor,
+      // Reached from Settings (no sidebar entry of its own), so provide an
+      // explicit way back.
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back),
+        tooltip: 'Back to Settings',
+        onPressed: () => context.go('/settings'),
+      ),
       title: Text(
         'Translations',
         style: theme.textTheme.titleLarge?.copyWith(

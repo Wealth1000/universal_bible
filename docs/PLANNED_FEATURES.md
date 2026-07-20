@@ -1,7 +1,7 @@
 # Planned Features
 
-**Status:** In progress — §1, §2, §3 done.
-**Updated:** 2026-07-18
+**Status:** In progress — §1, §2, §3, §4 done.
+**Updated:** 2026-07-20
 
 This document captures every planned feature and fix agreed upon in the design session of 2026-07-18.
 Items are numbered for reference. Each section describes *what* the feature is, *why* it exists, and *how* it should behave. Implementation details (files, providers, widgets) are left for a separate plan doc.
@@ -85,7 +85,7 @@ When the user opens the chapter or book picker dropdown, the dropdown currently 
 
 ---
 
-## 4. Collapsible Sidebar (Desktop)
+## 4. Collapsible Sidebar (Desktop) ✅ Done
 
 ### Feature
 
@@ -235,7 +235,7 @@ The following order minimises rework:
 | Q1 | What are the three preset highlight colors? | Design system / owner | -> R, G, B
 | Q2 | On mobile, does the verse selection panel appear as a bottom sheet or a floating bar above the keyboard? | Owner | -> bottom sheet
 | Q3 | Should the compare panel's translation order be alphabetical, or match a user-defined order? | Owner | -> alphabetical
-| Q4 | Should the sidebar collapsed state be per-window or global? | Owner |
+| Q4 | Should the sidebar collapsed state be per-window or global? | Owner | -> global
 | Q5 | On mobile, is the translation pill visible at all times, or only when the header is expanded? | Owner | -> All times
 
 ---

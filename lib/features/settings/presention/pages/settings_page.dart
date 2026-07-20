@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:universal_bible/core/providers/translation_repo_provider.dart';
 import 'package:universal_bible/core/themes/theme_provider.dart';
@@ -205,6 +206,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     colorScheme,
                     currentTranslationId,
                   ),
+                  _buildManageTranslations(context, theme, colorScheme),
                   _buildVerseNumbersToggle(
                     context,
                     theme,
@@ -560,6 +562,46 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           },
         );
       },
+    );
+  }
+
+  // --- Manage Translations (entry point to the translation manager) ---
+  Widget _buildManageTranslations(
+    BuildContext context,
+    ThemeData theme,
+    ColorScheme colorScheme,
+  ) {
+    return InkWell(
+      onTap: () => context.go('/translations'),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Icon(Icons.download_for_offline_outlined, color: colorScheme.secondary),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Manage Translations',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    'Install, update or remove Bible translations',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: colorScheme.outline),
+          ],
+        ),
+      ),
     );
   }
 

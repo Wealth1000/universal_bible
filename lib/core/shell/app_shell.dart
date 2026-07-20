@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+
+import '../providers/sidebar_provider.dart';
 
 /// Unified app shell: persistent NavigationRail on desktop (>= 768px), bottom
 /// navigation bar on narrow layouts. Pages rendered inside a ShellRoute must
@@ -44,12 +47,6 @@ class _NavItem {
 const _mainItems = [
   _NavItem(Icons.menu_book_outlined, Icons.menu_book, 'Bible', '/reader'),
   _NavItem(Icons.search, Icons.search, 'Search', '/search'),
-  _NavItem(
-    Icons.translate_outlined,
-    Icons.translate,
-    'Translations',
-    '/translations',
-  ),
   _NavItem(Icons.bookmark_outline, Icons.bookmark, 'Bookmarks', null),
   _NavItem(Icons.sticky_note_2_outlined, Icons.sticky_note_2, 'Notes', null),
 ];
@@ -76,7 +73,7 @@ void _navigate(BuildContext context, _NavItem item, String currentPath) {
 }
 
 // --- Desktop sidebar (NavigationRail) ---
-class _Sidebar extends StatelessWidget {
+class _Sidebar extends ConsumerWidget {
   final String currentPath;
 
   const _Sidebar({required this.currentPath});
@@ -84,12 +81,17 @@ class _Sidebar extends StatelessWidget {
   static const _allItems = [..._mainItems, _settingsItem];
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final collapsed = ref.watch(sidebarCollapsedProvider);
 
     // Find the index of the currently active destination (if any).
-    var selectedIndex = _allItems.indexWhere((i) => i.route == currentPath);
+    // /translations is reached from Settings, so it keeps Settings active.
+    final effectivePath = currentPath == '/translations'
+        ? _settingsItem.route
+        : currentPath;
+    var selectedIndex = _allItems.indexWhere((i) => i.route == effectivePath);
     if (selectedIndex < 0) selectedIndex = 0;
 
     return Material(
@@ -97,12 +99,15 @@ class _Sidebar extends StatelessWidget {
       child: SafeArea(
         right: false,
         child: NavigationRail(
-          // 80px is enough for "Translations" / "Bookmarks" / "Settings" to
-          // render without being clipped, even with the always-visible label.
-          minWidth: 80,
+          // Expanded: 80px is enough for "Translations" / "Bookmarks" /
+          // "Settings" to render without being clipped, even with the
+          // always-visible label. Collapsed: icons only, narrow.
+          minWidth: collapsed ? 56 : 80,
           minExtendedWidth: 80,
           extended: false,
-          labelType: NavigationRailLabelType.all,
+          labelType: collapsed
+              ? NavigationRailLabelType.none
+              : NavigationRailLabelType.all,
           selectedIndex: selectedIndex,
           backgroundColor: colorScheme.surfaceContainerLow,
           indicatorColor: colorScheme.secondaryContainer,
@@ -122,19 +127,39 @@ class _Sidebar extends StatelessWidget {
             fontSize: 11,
             fontWeight: FontWeight.w400,
           ),
-          leading: Padding(
-            padding: const EdgeInsets.only(top: 12, bottom: 8),
-            child: Image.asset(
-              'assets/images/app_logo.png',
-              width: 36,
-              height: 36,
-            ),
+          leading: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 12, bottom: 8),
+                child: Image.asset(
+                  'assets/images/app_logo.png',
+                  width: 36,
+                  height: 36,
+                ),
+              ),
+              IconButton(
+                icon: Icon(
+                  collapsed ? Icons.chevron_right : Icons.chevron_left,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+                tooltip: collapsed ? 'Expand sidebar' : 'Collapse sidebar',
+                onPressed: () =>
+                    ref.read(sidebarCollapsedProvider.notifier).toggle(),
+              ),
+            ],
           ),
           destinations: [
             for (final item in _allItems)
               NavigationRailDestination(
-                icon: Icon(item.icon),
-                selectedIcon: Icon(item.selectedIcon),
+                icon: collapsed
+                    ? Tooltip(message: item.label, child: Icon(item.icon))
+                    : Icon(item.icon),
+                selectedIcon: collapsed
+                    ? Tooltip(
+                        message: item.label,
+                        child: Icon(item.selectedIcon),
+                      )
+                    : Icon(item.selectedIcon),
                 label: Text(item.label),
               ),
           ],

@@ -21,6 +21,7 @@ class StorageService {
   static const String _keyReadingTranslation = 'reading_position.translation';
   static const String _keyReadingBook = 'reading_position.book';
   static const String _keyReadingChapter = 'reading_position.chapter';
+  static const String _keySidebarCollapsed = 'sidebar.collapsed';
 
   late final String baseDir;
   late final SharedPreferences _prefs;
@@ -89,6 +90,16 @@ class StorageService {
   /// reset where the user was reading.
   Future<void> saveReadingTranslation(String translationId) async {
     await _prefs.setString(_keyReadingTranslation, translationId);
+  }
+
+  // --- Sidebar (desktop, cross-session, global) ---
+
+  /// Whether the desktop sidebar was collapsed when last used.
+  /// Sync because [init] loads prefs before runApp. Defaults to expanded.
+  bool get sidebarCollapsed => _prefs.getBool(_keySidebarCollapsed) ?? false;
+
+  Future<void> saveSidebarCollapsed(bool collapsed) async {
+    await _prefs.setBool(_keySidebarCollapsed, collapsed);
   }
 
   // --- Subdirectories ---

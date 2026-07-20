@@ -43,13 +43,15 @@ Bible Reader
 ├── Search
 ├── Bookmarks
 ├── Notes
-├── Translations
 ├── Downloads
 ├── Settings
+│      └── Translations
 └── Profile
 ```
 
 No primary screen should require navigating through another primary screen.
+Translations is a secondary screen managed from Settings (a "Manage
+Translations" entry), not a primary destination.
 
 ---
 
@@ -452,8 +454,6 @@ Reader
 
 Search
 
-Translations
-
 Bookmarks
 
 Notes
@@ -463,9 +463,12 @@ Downloads
 Settings
 ```
 
-Optional
+Translations is not on the rail — it is reached via Settings → Manage
+Translations (the rail keeps Settings highlighted while on /translations).
 
-Collapsible Sidebar
+Collapsible: a chevron toggle in the rail header collapses the sidebar to
+icons-only (tooltips on hover). The collapsed/expanded state is global and
+persisted across sessions (`sidebar.collapsed` via StorageService).
 
 ---
 

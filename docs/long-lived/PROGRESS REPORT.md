@@ -229,3 +229,31 @@ Plan: docs/PLAN.md · Discovery: docs/CONTEXT.md
 ### Batch 5: Docs close-out — ✅
 - PLANNED_FEATURES.md: §2 marked ✅ Done, header status updated, note added about the reading-position persistence addition and the pill preserving book/chapter.
 - This work log finalized (all batches ✅).
+
+---
+
+## 🔨 Work Log – 2026-07-20 (§4 Collapsible Sidebar, Desktop)
+
+Q4 answered by owner: collapsed state is **global** (not per-window).
+
+### §4: Collapsible desktop sidebar — ✅
+- `StorageService`: `sidebar.collapsed` SharedPreferences key, `sidebarCollapsed` sync getter (defaults to expanded; prefs load before runApp) + `saveSidebarCollapsed()`.
+- New `lib/core/providers/sidebar_provider.dart`: `sidebarCollapsedProvider` (`Notifier<bool>`) — builds synchronously from StorageService (no flash of the wrong width on startup) and `toggle()` persists write-through.
+- `app_shell.dart` `_Sidebar` → `ConsumerWidget`:
+  - Chevron toggle button in the rail header (below the logo), visible in both states; tooltip "Collapse sidebar" / "Expand sidebar"; flips direction with state.
+  - **Collapsed:** `minWidth: 56`, `labelType: none` (icons only), every destination icon wrapped in a `Tooltip` with its label to compensate for the hidden text.
+  - **Expanded:** unchanged 80px rail with always-visible labels.
+  - Content area already sits in an `Expanded` next to the rail, so it fills the freed space automatically. No animation (v1, per spec and PROJECT RULES §10).
+- Docs: PLANNED_FEATURES.md §4 marked ✅ (Q4 → global); SCREEN MAP.md "Optional Collapsible Sidebar" note replaced with the implemented behaviour.
+
+---
+
+## 🔨 Work Log – 2026-07-20 (Translations moved off the sidebar → Settings)
+
+Owner decision: Translations is not a primary destination — it is managed
+from Settings.
+
+- `app_shell.dart`: removed the Translations item from `_mainItems` (desktop rail; the mobile bottom bar never had it). The `/translations` route keeps the **Settings** rail item highlighted, since that is where the user came from.
+- `settings_page.dart`: new "Manage Translations" tile in the **Reading** section (below Default Translation) → `context.go('/translations')`; download icon to distinguish it from the Default Translation tile.
+- `translation_manager_page.dart`: AppBar now has an explicit back arrow to `/settings` (the page lost its sidebar entry, so it needs a way out; other entry points — welcome page, reader empty-state, §2 grid "install more" — keep working since the route is unchanged).
+- Docs: ROUTES.md desktop nav list + SCREEN MAP.md primary-navigation tree and desktop rail list updated — Translations is now documented as a secondary screen reached from Settings.
