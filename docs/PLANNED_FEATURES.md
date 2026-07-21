@@ -1,7 +1,7 @@
 # Planned Features
 
-**Status:** In progress — §1, §2, §3, §4 done.
-**Updated:** 2026-07-20
+**Status:** In progress — §1, §2, §3, §4, §5 (desktop), §7 done.
+**Updated:** 2026-07-21
 
 This document captures every planned feature and fix agreed upon in the design session of 2026-07-18.
 Items are numbered for reference. Each section describes *what* the feature is, *why* it exists, and *how* it should behave. Implementation details (files, providers, widgets) are left for a separate plan doc.
@@ -107,7 +107,9 @@ The desktop sidebar (navigation rail) can be collapsed. When collapsed, it shows
 
 ---
 
-## 5. Verse Selection Action Panel
+## 5. Verse Selection Action Panel ✅ Done (desktop)
+
+> **Implementation notes (2026-07-21):** desktop delivered; mobile deferred (mobile development paused per DECISIONS.md). Share = copy-to-clipboard with a "Copied for sharing" toast (no share plugin on Linux; pub frozen). Custom color picker = preset material shade-grid dialog (no new dependency). Highlight semantics: re-applying the same color to an all-same-color selection removes it; a different color replaces (one color per verse). Notes: one row per selected verse, same content. Compare button is a stub until §6. Selection state hoisted to `selectedVersesProvider` (`reader_provider.dart`) so §6 can read it.
 
 ### Feature
 
@@ -187,6 +189,7 @@ NLT → New Living Translation
 - **Desktop:** The reader splits horizontally. The left pane is the normal reader (≈60% width), the right pane is the comparison column (≈40% width). A drag handle between panes is optional (v2).
 - **Mobile:** The comparison column opens as a **modal bottom sheet** that covers roughly the bottom 60% of the screen. The reader remains visible (dimmed) in the top portion so the selected verse is still in context.
 - A close button (×) dismisses the compare panel. The selection remains active until the user explicitly deselects.
+- **Expand to full screen (owner addition, 2026-07-21):** inside the compare pane there is an "open in full screen" action that navigates to a **new dedicated screen** containing only the selected verse(s) and the all-translations comparison. Standard back navigation returns to the reader with the split view / selection intact.
 
 ### Notes
 
@@ -195,7 +198,7 @@ NLT → New Living Translation
 
 ---
 
-## 7. Search Icon in Reader Header
+## 7. Search Icon in Reader Header ✅ Done
 
 ### Feature
 

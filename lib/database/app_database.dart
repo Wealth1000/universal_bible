@@ -102,6 +102,23 @@ Future<List<Highlight>> getHighlightsForVerse(String translationId, int book, in
           h.verse.equals(verse)))
     .get();
 
+Future<List<Highlight>> getHighlightsForChapter(String translationId, int book, int chapter) =>
+    (select(highlights)
+      ..where((h) =>
+          h.translationId.equals(translationId) &
+          h.bookNumber.equals(book) &
+          h.chapter.equals(chapter)))
+    .get();
+
+Future<void> deleteHighlightsForVerse(String translationId, int book, int chapter, int verse) =>
+    (delete(highlights)
+      ..where((h) =>
+          h.translationId.equals(translationId) &
+          h.bookNumber.equals(book) &
+          h.chapter.equals(chapter) &
+          h.verse.equals(verse)))
+    .go();
+
 // --- Bookmarks ---
 Future<void> insertBookmark(BookmarksCompanion companion) =>
     into(bookmarks).insert(companion);

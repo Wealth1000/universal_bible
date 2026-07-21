@@ -257,3 +257,45 @@ from Settings.
 - `settings_page.dart`: new "Manage Translations" tile in the **Reading** section (below Default Translation) → `context.go('/translations')`; download icon to distinguish it from the Default Translation tile.
 - `translation_manager_page.dart`: AppBar now has an explicit back arrow to `/settings` (the page lost its sidebar entry, so it needs a way out; other entry points — welcome page, reader empty-state, §2 grid "install more" — keep working since the route is unchanged).
 - Docs: ROUTES.md desktop nav list + SCREEN MAP.md primary-navigation tree and desktop rail list updated — Translations is now documented as a secondary screen reached from Settings.
+
+---
+
+## 🔨 Work Log – 2026-07-21 (§7 Search Icon + Desktop Tap-Selection Fix)
+
+### §7: Search icon in reader header — ✅
+- Desktop `_TopBar`: search `IconButton` (tooltip "Search") left of the translation pill → `context.go('/search')`.
+- Mobile AppBar `actions`: same icon before the overflow menu (mobile route itself remains disabled per DECISIONS.md).
+- PLANNED_FEATURES.md §7 marked ✅ Done.
+
+### Desktop verse-action overlay now driven by verse TAP, not text selection — ✅
+- Previously tapping a verse only highlighted it, while mouse text-selection (SelectionArea `onSelectionChanged`) was what showed the "Add Note" FAB — backwards per owner preference.
+- `_ReaderContentState` now owns the selection set (`_selectedVerseKeys`, keyed `book|chapter|verse` — supports non-contiguous, cross-chapter selection, groundwork for §5). `_VerseTile` became stateless; tap toggles membership and reports the joined selected verses (with references, normalized text) up via `onVersesSelected` (renamed from `onTextSelected`).
+- FAB shows while ≥1 verse selected; deselecting all hides it. SelectionArea kept for plain copy but no longer drives the overlay.
+
+---
+
+## 🔨 Work Log – 2026-07-21 (§5 Verse Selection Action Panel, Desktop)
+
+Owner answers: same-color re-apply = toggle off / different color replaces; note = one row per selected verse (same content); Share = copy + "Copied for sharing" toast (no plugin, pub frozen); custom picker = preset shade grid (no dependency).
+
+### Batch 1: Domain + DB — ✅
+- `reader_provider.dart`: `VerseRef` value class (book/chapter/verse, value equality); `selectedVersesProvider` (`Notifier<Set<VerseRef>>`, `toggle()`/`clear()`) — selection hoisted out of `_ReaderContentState` so §5 panel and future §6 compare share it; `highlightsVersionProvider` (int counter) bumped after highlight writes so content re-fetches.
+- `app_database.dart`: new DAOs `getHighlightsForChapter()` and `deleteHighlightsForVerse()`.
+- `_ReaderContentState`: `_selectedVerseKeys` removed; render checks watch `selectedVersesProvider`, `_toggleVerse` goes through the notifier (joined-text report to the page unchanged). Content recreation (nav/translation switch) clears the selection post-frame, mirroring old local-state behavior.
+
+### Batch 2: Panel widget + wiring — ✅
+- New `lib/features/bible/presentation/widgets/verse_action_panel.dart`:
+  - `VerseActionPanel` — floating Material card: R/G/B swatches + custom-picker slot | Save/Note/Copy/Share | Compare | ×. Tooltips + `Semantics(button:true)` throughout.
+  - Preset constants `kHighlightRed/Green/Blue` (0x66 alpha), `highlightColorToHex`/`highlightColorFromHex` (`#AARRGGBB`).
+  - `showHighlightColorPickerDialog()` — 18 material hues × 3 shades in a Wrap grid; returns color at 0.4 alpha. Zero new dependencies.
+- `_ReaderPageState`: stub FAB replaced by the panel at `FloatingActionButtonLocation.centerFloat`, shown while ≥1 verse selected; × clears selection + hides panel.
+
+### Batch 3: Actions — ✅
+- **Highlight**: `_applyHighlight(color)` — if every selected verse already carries exactly this color → delete (toggle off); else delete existing + insert new rows (uuid, now). Bumps `highlightsVersionProvider`; `_ReaderContentState._reloadHighlights()` refreshes `_highlightsByVerse` (also run on initial load and lazy next/prev chapter loads). `_VerseTile` gained `highlightColor` — highlight bg renders when not selected; when selected, selection tint wins with a border in the highlight color.
+- **Bookmark**: one `Bookmarks` row per selected verse (label null) + toast.
+- **Note**: dialog (multiline TextField, Cancel/Save) → one `Notes` row per selected verse, same content + toast.
+- **Copy / Share**: `Clipboard.setData` with the "Book C:V text" lines already built by the selection reporter; distinct toasts.
+- **Compare**: stub toast + `// TODO(§6)`.
+
+### Batch 4: Docs — ✅
+- PLANNED_FEATURES.md §5 marked ✅ (desktop) with implementation notes; DECISIONS.md entry (selection provider, hex format, toggle semantics, share fallback, picker choice); this work log.

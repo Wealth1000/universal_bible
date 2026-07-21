@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:universal_bible/core/providers/translation_repo_provider.dart';
@@ -14,6 +15,8 @@ import 'package:universal_bible/features/bible/domain/chapter_navigation.dart';
 import 'package:universal_bible/features/bible/domain/continuous_reading_provider.dart';
 import 'package:universal_bible/features/bible/domain/reader_provider.dart';
 import 'package:universal_bible/features/bible/presentation/widgets/translation_grid.dart';
+import 'package:universal_bible/features/bible/presentation/widgets/verse_action_panel.dart';
+import 'package:uuid/uuid.dart';
 import 'dart:convert';
 import '../../../../core/providers/database_provider.dart';
 
@@ -428,9 +431,10 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
                   onNext: nextRef == null ? null : () => _goTo(nextRef),
                   loadChapterAfter: _loadChapterAfter,
                   loadChapterBefore: _loadChapterBefore,
-                  onTextSelected: (text) {
-                    // Only rebuild when the state actually changes —
-                    // rebuilding during a selection drag causes churn.
+                  // Verse taps (not mouse text-selection) drive the
+                  // action overlay: text is the joined selected verses,
+                  // empty when the last verse is deselected.
+                  onVersesSelected: (text) {
                     final visible = text.isNotEmpty;
                     if (visible == _selectionFabVisible &&
                         text == _selectedText) {
@@ -449,32 +453,196 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
           ),
         ],
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButton: _selectionFabVisible
-          ? FloatingActionButton.extended(
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Copied: $_selectedText')),
-                );
-                setState(() {
-                  _selectionFabVisible = false;
-                });
+          ? VerseActionPanel(
+              onHighlight: _applyHighlight,
+              onCustomHighlight: () async {
+                final color = await showHighlightColorPickerDialog(context);
+                if (color != null) {
+                  await _applyHighlight(color);
+                }
               },
-              label: Row(
-                children: [
-                  const Icon(Icons.edit),
-                  const SizedBox(width: 8),
-                  const Text('Add Note'),
-                  const SizedBox(width: 8),
-                  Container(width: 1, height: 20, color: Colors.white30),
-                  const SizedBox(width: 8),
-                  const Icon(Icons.share),
-                ],
-              ),
-              backgroundColor: primaryColor,
-              foregroundColor: Colors.white,
+              onBookmark: _bookmarkSelection,
+              onNote: _noteSelection,
+              onCopy: () => _copySelection('Copied to clipboard'),
+              // No system share sheet on Linux desktop without a plugin
+              // (pub is frozen) — Share copies with a distinct toast.
+              onShare: () => _copySelection('Copied for sharing'),
+              onCompare: () {
+                // TODO(§6): open the compare panel.
+                _toast('Compare is coming soon');
+              },
+              onClose: _clearSelection,
             )
           : null,
     );
+  }
+
+  // --- §5 selection actions ---
+
+  void _toast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _clearSelection() {
+    ref.read(selectedVersesProvider.notifier).clear();
+    setState(() {
+      _selectionFabVisible = false;
+      _selectedText = '';
+    });
+  }
+
+  List<VerseRef> _sortedSelection() {
+    final refs = ref.read(selectedVersesProvider).toList()
+      ..sort((a, b) {
+        if (a.book != b.book) return a.book - b.book;
+        if (a.chapter != b.chapter) return a.chapter - b.chapter;
+        return a.verse - b.verse;
+      });
+    return refs;
+  }
+
+  /// Applies [color] to the selection. If every selected verse already has
+  /// exactly this color, the highlight is removed instead (toggle-off);
+  /// otherwise existing highlights are replaced (one color per verse).
+  Future<void> _applyHighlight(Color color) async {
+    final translationId = ref.read(currentTranslationProvider);
+    final refs = _sortedSelection();
+    if (translationId == null || refs.isEmpty) return;
+    final db = ref.read(databaseProvider);
+    final hex = highlightColorToHex(color);
+
+    var allAlreadyThisColor = true;
+    for (final v in refs) {
+      final existing = await db.getHighlightsForVerse(
+        translationId,
+        v.book,
+        v.chapter,
+        v.verse,
+      );
+      if (existing.isEmpty || existing.any((h) => h.color != hex)) {
+        allAlreadyThisColor = false;
+        break;
+      }
+    }
+
+    for (final v in refs) {
+      await db.deleteHighlightsForVerse(
+        translationId,
+        v.book,
+        v.chapter,
+        v.verse,
+      );
+      if (!allAlreadyThisColor) {
+        await db.insertHighlight(
+          HighlightsCompanion.insert(
+            id: const Uuid().v4(),
+            translationId: translationId,
+            bookNumber: v.book,
+            chapter: v.chapter,
+            verse: v.verse,
+            color: hex,
+            createdAt: DateTime.now(),
+          ),
+        );
+      }
+    }
+
+    ref.read(highlightsVersionProvider.notifier).bump();
+    _toast(
+      allAlreadyThisColor
+          ? 'Highlight removed from ${refs.length} verse(s)'
+          : 'Highlighted ${refs.length} verse(s)',
+    );
+  }
+
+  Future<void> _bookmarkSelection() async {
+    final translationId = ref.read(currentTranslationProvider);
+    final refs = _sortedSelection();
+    if (translationId == null || refs.isEmpty) return;
+    final db = ref.read(databaseProvider);
+    for (final v in refs) {
+      await db.insertBookmark(
+        BookmarksCompanion.insert(
+          id: const Uuid().v4(),
+          translationId: translationId,
+          bookNumber: v.book,
+          chapter: v.chapter,
+          verse: v.verse,
+          createdAt: DateTime.now(),
+        ),
+      );
+    }
+    _toast('Bookmarked ${refs.length} verse(s)');
+  }
+
+  Future<void> _noteSelection() async {
+    final translationId = ref.read(currentTranslationProvider);
+    final refs = _sortedSelection();
+    if (translationId == null || refs.isEmpty) return;
+
+    final controller = TextEditingController();
+    final content = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Add note'),
+        content: SizedBox(
+          width: 420,
+          child: TextField(
+            controller: controller,
+            autofocus: true,
+            maxLines: 6,
+            minLines: 3,
+            decoration: const InputDecoration(
+              hintText: 'Write your note…',
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(controller.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (content == null || content.isEmpty) return;
+
+    // One row per selected verse, same content (v1).
+    final db = ref.read(databaseProvider);
+    final now = DateTime.now();
+    for (final v in refs) {
+      await db.insertNote(
+        NotesCompanion.insert(
+          id: const Uuid().v4(),
+          translationId: translationId,
+          bookNumber: v.book,
+          chapter: v.chapter,
+          verse: v.verse,
+          content: content,
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+    }
+    _toast('Note saved for ${refs.length} verse(s)');
+  }
+
+  void _copySelection(String toast) {
+    if (_selectedText.isEmpty) return;
+    Clipboard.setData(ClipboardData(text: _selectedText));
+    _toast(toast);
   }
 }
 
@@ -604,6 +772,14 @@ class _TopBar extends StatelessWidget {
               //     ),
               //   ),
               // ),
+              // Search shortcut (§7): secondary entry point to the Search
+              // screen, alongside the sidebar item.
+              IconButton(
+                icon: Icon(Icons.search, color: colorScheme.onSurfaceVariant),
+                tooltip: 'Search',
+                onPressed: () => context.go('/search'),
+              ),
+              const SizedBox(width: 8),
               // Translation pill (§2): opens the grid dropdown.
               Semantics(
                 button: true,
@@ -661,7 +837,7 @@ class _ReaderContent extends ConsumerStatefulWidget {
   final VoidCallback? onNext;
   final Future<_LoadedChapter?> Function(int book, int chapter) loadChapterAfter;
   final Future<_LoadedChapter?> Function(int book, int chapter) loadChapterBefore;
-  final Function(String) onTextSelected;
+  final Function(String) onVersesSelected;
 
   const _ReaderContent({
     super.key,
@@ -673,7 +849,7 @@ class _ReaderContent extends ConsumerStatefulWidget {
     required this.onNext,
     required this.loadChapterAfter,
     required this.loadChapterBefore,
-    required this.onTextSelected,
+    required this.onVersesSelected,
   });
 
   @override
@@ -690,8 +866,58 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
   bool _loadingPrev = false;
   bool _reachedStart = false;
 
+  void _toggleVerse(_LoadedChapter chapter, Verse verse) {
+    // Selection lives in selectedVersesProvider (shared with the §5 action
+    // panel and the future §6 compare panel). Verse taps — not mouse
+    // text-selection — drive it.
+    ref
+        .read(selectedVersesProvider.notifier)
+        .toggle(VerseRef(chapter.book, chapter.chapter, verse.verse));
+    // Report the selected verses' plain text, in reading order.
+    final selected = ref.read(selectedVersesProvider);
+    final parts = <String>[];
+    for (final ch in _chapters) {
+      for (final v in ch.verses) {
+        if (selected.contains(VerseRef(ch.book, ch.chapter, v.verse))) {
+          parts.add(
+            '${ch.bookName} ${ch.chapter}:${v.verse} '
+            '${normalizeResolvedScriptureText(v.verseText)}',
+          );
+        }
+      }
+    }
+    widget.onVersesSelected(parts.join('\n'));
+  }
+
+  // Persisted highlights for the loaded chapters, keyed by verse ref.
+  final Map<VerseRef, Color> _highlightsByVerse = {};
+
   // Cooldown timer to prevent rapid successive loading.
   Timer? _loadCooldownTimer;
+
+  /// (Re)loads highlights for every loaded chapter into [_highlightsByVerse].
+  Future<void> _reloadHighlights() async {
+    final translationId = ref.read(currentTranslationProvider);
+    if (translationId == null) return;
+    final db = ref.read(databaseProvider);
+    final loaded = <VerseRef, Color>{};
+    for (final ch in List<_LoadedChapter>.of(_chapters)) {
+      final rows =
+          await db.getHighlightsForChapter(translationId, ch.book, ch.chapter);
+      for (final h in rows) {
+        final color = highlightColorFromHex(h.color);
+        if (color != null) {
+          loaded[VerseRef(h.bookNumber, h.chapter, h.verse)] = color;
+        }
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _highlightsByVerse
+        ..clear()
+        ..addAll(loaded);
+    });
+  }
 
   @override
   void initState() {
@@ -700,11 +926,18 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         ref.read(visibleChapterProvider.notifier).set(widget.initialChapter.chapter);
+        // Content recreation (navigation, translation switch) starts a
+        // fresh selection — mirrors the pre-provider local-state behavior.
+        ref.read(selectedVersesProvider.notifier).clear();
+        widget.onVersesSelected('');
       }
     });
 
     // Always track which chapter header is visually centred.
     _scrollController.addListener(_updateVisibleChapter);
+
+    // Load persisted highlights for the initial chapter.
+    _reloadHighlights();
 
     if (widget.continuousReading) {
       _scrollController.addListener(_maybeLoadNext);
@@ -785,6 +1018,10 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
       }
       _loadingNext = false;
     });
+    if (next != null && next.verses.isNotEmpty) {
+      // Pick up any highlights in the newly loaded chapter.
+      _reloadHighlights();
+    }
 
     // If we loaded a chapter, schedule another check after a cooldown.
     if (next != null && next.verses.isNotEmpty) {
@@ -827,6 +1064,8 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
       _chapters.insert(0, prev);
       _chapterHeaderKeys.insert(0, GlobalKey());
     });
+    // Pick up any highlights in the newly loaded chapter.
+    _reloadHighlights();
 
     // After layout, jump forward by the height of the inserted content so
     // the viewport still shows the same verses.
@@ -846,11 +1085,13 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
 
   @override
   Widget build(BuildContext context) {
+    final selectedVerses = ref.watch(selectedVersesProvider);
+    // Re-fetch highlights after any highlight write (§5 action panel).
+    ref.listen(highlightsVersionProvider, (prev, next) => _reloadHighlights());
     // Removed Scrollbar wrapper as requested.
+    // SelectionArea keeps mouse text-selection available for copying, but
+    // it no longer drives the action overlay — verse taps do.
     return SelectionArea(
-      onSelectionChanged: (selection) {
-        widget.onTextSelected(selection?.plainText ?? '');
-      },
       child: ListView(
         key: _scrollKey,
         controller: _scrollController,
@@ -861,9 +1102,17 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
             _ChapterHeader(key: _chapterHeaderKeys[i], chapter: _chapters[i]),
             const SizedBox(height: 48),
             ..._chapters[i].verses.map((verse) {
+              final vRef = VerseRef(
+                _chapters[i].book,
+                _chapters[i].chapter,
+                verse.verse,
+              );
               return _VerseTile(
                 verseNumber: verse.verse,
                 text: verse.verseText,
+                selected: selectedVerses.contains(vRef),
+                highlightColor: _highlightsByVerse[vRef],
+                onTap: () => _toggleVerse(_chapters[i], verse),
               );
             }),
           ],
@@ -1001,21 +1250,20 @@ class _ChapterNavButtons extends StatelessWidget {
 }
 
 // --- Individual Verse Tile ---
-class _VerseTile extends StatefulWidget {
+class _VerseTile extends StatelessWidget {
   final int verseNumber;
   final String text;
+  final bool selected;
+  final Color? highlightColor;
+  final VoidCallback onTap;
 
   const _VerseTile({
     required this.verseNumber,
     required this.text,
+    required this.selected,
+    this.highlightColor,
+    required this.onTap,
   });
-
-  @override
-  State<_VerseTile> createState() => _VerseTileState();
-}
-
-class _VerseTileState extends State<_VerseTile> {
-  bool _isSelected = false;
 
   @override
   Widget build(BuildContext context) {
@@ -1034,7 +1282,7 @@ class _VerseTileState extends State<_VerseTile> {
     // Strip HTML, decode entities, and keep words-of-Christ segments
     // (red-letter) via sentinel markers.
     final normalized = normalizeResolvedScriptureText(
-      widget.text,
+      text,
       preserveWordsOfChrist: true,
     );
     final spans = buildScriptureSpans(
@@ -1044,17 +1292,18 @@ class _VerseTileState extends State<_VerseTile> {
     );
 
     return GestureDetector(
-      onTap: () {
-        setState(() {
-          _isSelected = !_isSelected;
-        });
-      },
+      onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 4),
         decoration: BoxDecoration(
-          color: _isSelected
+          // Selection tint wins over a persisted highlight; a selected
+          // highlighted verse keeps its highlight visible via the border.
+          color: selected
               ? (isDark ? Colors.grey.shade800 : const Color(0xFFFFFDE7))
-              : Colors.transparent,
+              : (highlightColor ?? Colors.transparent),
+          border: selected && highlightColor != null
+              ? Border.all(color: highlightColor!.withValues(alpha: 1))
+              : null,
           borderRadius: BorderRadius.circular(4),
         ),
         child: Row(
@@ -1063,7 +1312,7 @@ class _VerseTileState extends State<_VerseTile> {
             SizedBox(
               width: 40,
               child: Text(
-                '${widget.verseNumber}',
+                '$verseNumber',
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: onSurfaceVariant.withValues(alpha: 0.5),
                   fontWeight: FontWeight.w500,

@@ -606,6 +606,13 @@ class _ReaderPageMobileState extends ConsumerState<ReaderPageMobile> {
         ),
         centerTitle: true,
         actions: [
+          // Search shortcut (§7): secondary entry point to the Search
+          // screen, alongside the bottom-bar item.
+          IconButton(
+            icon: Icon(Icons.search, color: colorScheme.onSurfaceVariant),
+            tooltip: 'Search',
+            onPressed: () => context.go('/search'),
+          ),
           PopupMenuButton<String>(
             icon: Icon(Icons.more_vert, color: colorScheme.onSurfaceVariant),
             tooltip: 'Reader options',
