@@ -15,9 +15,22 @@ class TranslationManagerPage extends ConsumerStatefulWidget {
       _TranslationManagerPageState();
 }
 
+enum _ImportStatus { pending, importing, done, failed }
+
+class _ImportJob {
+  final String fileName;
+  _ImportStatus status = _ImportStatus.pending;
+
+  _ImportJob(this.fileName);
+}
+
 class _TranslationManagerPageState
     extends ConsumerState<TranslationManagerPage> {
   bool _isImporting = false;
+
+  /// Non-null while a batch import is running (and briefly after, until
+  /// dismissed). Drives the progress card.
+  List<_ImportJob>? _importJobs;
   List<Translation> _translations = [];
 
   @override
@@ -35,86 +48,73 @@ class _TranslationManagerPageState
   }
 
   Future<void> _importTranslation() async {
-    setState(() => _isImporting = true);
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['bdat'],
+      allowMultiple: true,
+    );
 
-    try {
-      final result = await FilePicker.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['bdat'],
-        allowMultiple: true,
-      );
+    if (result == null || result.files.isEmpty) return;
 
-      if (result == null || result.files.isEmpty) {
-        setState(() => _isImporting = false);
-        return;
-      }
+    final files = result.files.where((f) => f.path != null).toList();
+    final jobs = [for (final f in files) _ImportJob(f.name)];
 
-      final repo = ref.read(translationRepoProvider);
-      int successCount = 0;
-      int failureCount = 0;
+    setState(() {
+      _isImporting = true;
+      _importJobs = jobs;
+    });
 
-      for (final file in result.files) {
-        final filePath = file.path;
-        if (filePath == null) continue;
+    final repo = ref.read(translationRepoProvider);
+    final hadTranslations = _translations.isNotEmpty;
+    int successCount = 0;
 
-        try {
-          await repo.importFromFile(filePath);
-          successCount++;
-        } catch (e) {
-          debugPrint('❌ Failed to import ${file.name}: $e');
-          failureCount++;
-        }
-      }
-
-      // Refresh the list after all imports
-      await _loadTranslations();
-
-      // Set first imported as active if any succeeded
-      if (successCount > 0) {
-        final translations = await repo.getInstalled();
-        if (translations.isNotEmpty) {
+    // Sequential on purpose: parsing already runs on a background isolate,
+    // and the DB write is the serial part anyway. The list refreshes after
+    // each file so imported translations are readable immediately.
+    for (var i = 0; i < files.length; i++) {
+      setState(() => jobs[i].status = _ImportStatus.importing);
+      try {
+        await repo.importFromFile(files[i].path!);
+        successCount++;
+        if (!mounted) return;
+        setState(() => jobs[i].status = _ImportStatus.done);
+        await _loadTranslations();
+        // Make the first successful import active right away if the user
+        // had nothing installed, so they can start reading while the rest
+        // load.
+        if (!hadTranslations &&
+            ref.read(currentTranslationProvider) == null &&
+            _translations.isNotEmpty) {
           ref
               .read(currentTranslationProvider.notifier)
-              .set(translations.first.id);
+              .set(_translations.first.id);
         }
+      } catch (e) {
+        debugPrint('❌ Failed to import ${files[i].name}: $e');
+        if (!mounted) return;
+        setState(() => jobs[i].status = _ImportStatus.failed);
       }
+    }
 
-      // Show summary
-      if (mounted) {
-        final message = successCount > 0
-            ? 'Imported $successCount translation${successCount > 1 ? 's' : ''} successfully.'
-            : 'No translations were imported.';
-        if (failureCount > 0) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('$message $failureCount failed. Check logs.'),
-              backgroundColor: AppColors.danger(Theme.of(context).brightness),
-            ),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(message),
-              backgroundColor: AppColors.success(Theme.of(context).brightness),
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      debugPrint('Error during import: $e');
-      debugPrint('Stack trace: ${StackTrace.current}');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: AppColors.danger(Theme.of(context).brightness),
+    if (!mounted) return;
+    final failureCount = jobs
+        .where((j) => j.status == _ImportStatus.failed)
+        .length;
+    setState(() {
+      _isImporting = false;
+      // Keep the card visible if anything failed so the user can see which;
+      // otherwise it disappears — the refreshed list is the confirmation.
+      if (failureCount == 0) _importJobs = null;
+    });
+    if (failureCount > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '$successCount imported, $failureCount failed. Check logs.',
           ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isImporting = false);
-      }
+          backgroundColor: AppColors.danger(Theme.of(context).brightness),
+        ),
+      );
     }
   }
 
@@ -271,6 +271,15 @@ class _TranslationManagerPageState
             ),
           ),
 
+          // Import progress card
+          if (_importJobs != null)
+            _ImportProgressCard(
+              jobs: _importJobs!,
+              onDismiss: _isImporting
+                  ? null
+                  : () => setState(() => _importJobs = null),
+            ),
+
           // Translation List
           Expanded(
             child: _translations.isEmpty
@@ -335,6 +344,117 @@ class _TranslationManagerPageState
             )
           : const Icon(Icons.download),
       label: Text(_isImporting ? 'Importing...' : 'Import'),
+    );
+  }
+}
+
+// --- Import progress card ---
+class _ImportProgressCard extends StatelessWidget {
+  final List<_ImportJob> jobs;
+
+  /// Null while the batch is still running (card can't be dismissed).
+  final VoidCallback? onDismiss;
+
+  const _ImportProgressCard({required this.jobs, required this.onDismiss});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final doneCount = jobs
+        .where(
+          (j) =>
+              j.status == _ImportStatus.done ||
+              j.status == _ImportStatus.failed,
+        )
+        .length;
+    final running = onDismiss == null;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerLow,
+        border: Border.all(color: colorScheme.outlineVariant),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  running
+                      ? 'Importing $doneCount of ${jobs.length}…'
+                      : 'Import finished',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              if (!running)
+                IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  tooltip: 'Dismiss',
+                  onPressed: onDismiss,
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: jobs.isEmpty ? 0 : doneCount / jobs.length,
+            ),
+          ),
+          const SizedBox(height: 12),
+          for (final job in jobs)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: switch (job.status) {
+                      _ImportStatus.pending => Icon(
+                        Icons.schedule,
+                        size: 16,
+                        color: colorScheme.outline,
+                      ),
+                      _ImportStatus.importing =>
+                        const CircularProgressIndicator(strokeWidth: 2),
+                      _ImportStatus.done => Icon(
+                        Icons.check_circle,
+                        size: 16,
+                        color: AppColors.success(theme.brightness),
+                      ),
+                      _ImportStatus.failed => Icon(
+                        Icons.error,
+                        size: 16,
+                        color: AppColors.danger(theme.brightness),
+                      ),
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      job.fileName,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: job.status == _ImportStatus.failed
+                            ? AppColors.danger(theme.brightness)
+                            : colorScheme.onSurfaceVariant,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

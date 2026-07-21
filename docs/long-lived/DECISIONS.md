@@ -39,7 +39,10 @@ UNTIL FURTHER NOTICE, MOBILE specific data shall not be developed. this goes acc
 - **Toasts only for non-visible effects (2026-07-21, owner).** Snackbars confirm only actions whose result isn't visible in the reader (bookmark, note, copy/share). Highlights get no toast — the colored verses are the feedback, and a snackbar would cover the bottom-center action panel. Remaining toasts are floating, 360px, ~2s.
 - **§6 compare panel (2026-07-21, desktop).** `compareOpenProvider` (bool) + pane rendered iff `compareOpen && selection.isNotEmpty` — comparison is live-updating; deselect-all (or the action panel ×, or content recreation) closes it, while the pane's own × keeps the selection. Translation blocks alphabetical by abbreviation (Q3), missing verses show an italic "Not available" line; new `getVerse()` DAO. Shared `CompareColumn` widget serves both the 60/40 split view and the routed full-screen `/compare` page (`ComparePageDesktop`), which derives book names itself from the active translation's bookMap and is reached via `context.push` so back restores the split view.
 - **Reading settings live in `core/providers/reading_settings_provider.dart` (2026-07-21).** `fontSizeProvider`, `showVerseNumbersProvider`, `defaultTranslationProvider` — self-loading Notifiers over SharedPreferences (same pattern as `preserveOriginalBookNamesProvider`), moved out of the settings page so the reader can watch them without cross-feature imports. Reader wiring: verse font size + verse-number visibility live-update. **Default Translation is a fallback only** — reading-position persistence wins; the default seeds fresh installs/cleared positions (resolution: in-session ?? persisted ?? default ?? first). Selecting a default does NOT switch the active translation.
-- **App version is a constant in `core/app_info.dart` (2026-07-21).** `AppInfo.version` (currently 0.6.40-beta) is the single source shown in Settings and Welcome; bump on release. Reading from pubspec (package_info_plus) deferred until pub deps can change. The fake "Clear Cache" settings tile (hardcoded 42.5 MB, did nothing) was removed — there is no app cache to clear.
+- **App version is a constant in `core/app_info.dart` (2026-07-21).** `AppInfo.version` (currently **1.0.0**) is the single source shown in Settings and Welcome; bump on release. Reading from pubspec (package_info_plus) deferred until pub deps can change. The fake "Clear Cache" settings tile (hardcoded 42.5 MB, did nothing) was removed — there is no app cache to clear.
+- **Sidebar is permanently icons-only (2026-07-21, owner).** The §4 expand/collapse state was removed — the shell is small enough that tooltips suffice; the UI is self-explanatory. `sidebar_provider.dart` and the `sidebar.collapsed` pref deleted.
+- **Translation import parses on a background isolate (2026-07-21).** `importFromFile` runs file read + jsonDecode + verse-id math via `compute` (top-level `_parseBdatFile` → plain-data `ParsedBdat`); only the Drift write happens on the main isolate. Batch imports stay sequential (DB write is the serial part) but the Translation Manager refreshes its list after each file and shows a per-file progress card, so imported translations are readable while later ones load.
+- **MVP declared complete at v1.0.0 (2026-07-21, owner).** Scope: offline reading, .bdat import, search, bookmarks, notes, highlights, compare, settings, theming, "calm study" UI. **Sync is explicitly out of MVP** — the Supabase skeleton stays disabled; it is the headline post-MVP feature.
 
 ## Storage & config
 
@@ -52,11 +55,11 @@ UNTIL FURTHER NOTICE, MOBILE specific data shall not be developed. this goes acc
 
 ## Known debt (decided to defer, not forgotten)
 
-- Duplicate theme provider files (`lib/core/themes/theme_provider.dart` vs `lib/core/providers/theme_provider.dart`) — consolidate to one.
+- ~~Duplicate theme provider files~~ — fixed 2026-07-21 (UI overhaul Batch 1); only `core/themes/theme_provider.dart` remains.
 - Private `_translationRepoProvider` copy-pasted in 5 files — hoist into a shared provider.
 - `features/settings/presention/` directory is a typo ("presention") — rename when convenient.
 - `reader_mobile` route lacks a leading slash in `app_router.dart`.
-- Welcome page hardcodes "Version 2.4.0" — should read from pubspec.
+- ~~Welcome page hardcodes "Version 2.4.0"~~ — fixed 2026-07-21; version now comes from `AppInfo`.
 
 ---
 

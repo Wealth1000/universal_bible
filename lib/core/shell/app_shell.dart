@@ -1,9 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:universal_bible/core/design/app_tokens.dart';
-
-import '../providers/sidebar_provider.dart';
 
 /// Unified app shell: persistent NavigationRail on desktop (>= 768px), bottom
 /// navigation bar on narrow layouts. Pages rendered inside a ShellRoute must
@@ -74,7 +70,8 @@ void _navigate(BuildContext context, _NavItem item, String currentPath) {
 }
 
 // --- Desktop sidebar (NavigationRail) ---
-class _Sidebar extends ConsumerWidget {
+// Icons-only with tooltips; the UI is self-explanatory, no expanded state.
+class _Sidebar extends StatelessWidget {
   final String currentPath;
 
   const _Sidebar({required this.currentPath});
@@ -82,9 +79,8 @@ class _Sidebar extends ConsumerWidget {
   static const _allItems = [..._mainItems, _settingsItem];
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final collapsed = ref.watch(sidebarCollapsedProvider);
 
     // Find the index of the currently active destination (if any).
     // /translations is reached from Settings, so it keeps Settings active.
@@ -101,14 +97,8 @@ class _Sidebar extends ConsumerWidget {
       child: SafeArea(
         right: false,
         child: NavigationRail(
-          // Expanded: 84px fits "Bookmarks" / "Settings" labels. Collapsed:
-          // icons only, narrow.
-          minWidth: collapsed ? 56 : 84,
-          minExtendedWidth: 84,
-          extended: false,
-          labelType: collapsed
-              ? NavigationRailLabelType.none
-              : NavigationRailLabelType.all,
+          minWidth: 56,
+          labelType: NavigationRailLabelType.none,
           selectedIndex: selectedIndex,
           backgroundColor: colorScheme.surfaceContainerLow,
           // Active = ink pill (12% alpha), icon+label in ink.
@@ -118,46 +108,22 @@ class _Sidebar extends ConsumerWidget {
           unselectedIconTheme: IconThemeData(
             color: colorScheme.onSurfaceVariant,
           ),
-          selectedLabelTextStyle: AppTypography.caption.copyWith(
-            color: colorScheme.primary,
-            fontWeight: FontWeight.w600,
-          ),
-          unselectedLabelTextStyle: AppTypography.caption.copyWith(
-            color: colorScheme.onSurfaceVariant,
-          ),
-          leading: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(top: 12, bottom: 8),
-                child: Image.asset(
-                  'assets/images/app_logo.png',
-                  width: 36,
-                  height: 36,
-                ),
-              ),
-              IconButton(
-                icon: Icon(
-                  collapsed ? Icons.chevron_right : Icons.chevron_left,
-                  color: colorScheme.onSurfaceVariant,
-                ),
-                tooltip: collapsed ? 'Expand sidebar' : 'Collapse sidebar',
-                onPressed: () =>
-                    ref.read(sidebarCollapsedProvider.notifier).toggle(),
-              ),
-            ],
+          leading: Padding(
+            padding: const EdgeInsets.only(top: 12, bottom: 8),
+            child: Image.asset(
+              'assets/images/app_logo.png',
+              width: 36,
+              height: 36,
+            ),
           ),
           destinations: [
             for (final item in _allItems)
               NavigationRailDestination(
-                icon: collapsed
-                    ? Tooltip(message: item.label, child: Icon(item.icon))
-                    : Icon(item.icon),
-                selectedIcon: collapsed
-                    ? Tooltip(
-                        message: item.label,
-                        child: Icon(item.selectedIcon),
-                      )
-                    : Icon(item.selectedIcon),
+                icon: Tooltip(message: item.label, child: Icon(item.icon)),
+                selectedIcon: Tooltip(
+                  message: item.label,
+                  child: Icon(item.selectedIcon),
+                ),
                 label: Text(item.label),
               ),
           ],

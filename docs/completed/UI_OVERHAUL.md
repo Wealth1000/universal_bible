@@ -91,7 +91,8 @@ the app default — which is why UI chrome looks bookish-by-accident.)
   `radiusLarge 16` (floating panel, dialogs), `radiusFull` (pills).
 - Elevation: 0 for everything resting; shadow only on floating surfaces
   (action panel, dialogs, dropdown overlays) — soft, large-blur, low-alpha.
-- Reader column: max width 680, horizontal padding 32.
+- Reader column: FULL WIDTH (owner decision 2026-07-21 — no max-width
+  measure; scripture spans the space available), horizontal padding 32.
 - Content pages (search/bookmarks/notes/settings): max width 720, padding 24.
 
 ### 2.5 Theme plumbing

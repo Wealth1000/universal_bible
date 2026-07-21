@@ -85,10 +85,8 @@ abstract final class AppRadius {
 }
 
 abstract final class AppLayout {
-  /// Max width of the scripture reading column.
-  static const double readerColumnWidth = 680;
-
   /// Max width of content pages (search, bookmarks, notes, settings).
+  /// (The reader itself is full-width by owner decision.)
   static const double contentWidth = 720;
 
   /// Reader top bar height.

@@ -5,48 +5,45 @@ trust code over this doc when they disagree.
 
 ## What this is
 
-**universal_bible** — offline-first Flutter Bible reader. Desktop-first
-(Linux/Windows; Android target exists but **mobile development is paused
-per DECISIONS.md** — the `/reader_mobile` route is commented out in
-`app_router.dart`; `ReaderPageDesktop` is the live reader). Local
-Drift/SQLite is the source of truth; Supabase backend + sync exists as
-skeleton but is **disabled** (commented out in `main.dart`).
+**universal_bible** — offline-first Flutter Bible reader, **v1.0.0 — MVP
+complete (2026-07-21)**. Desktop-first (Linux/Windows; Android target
+exists but **mobile development is paused per DECISIONS.md** — the
+`/reader_mobile` route is commented out in `app_router.dart`;
+`ReaderPageDesktop` is the live reader). Local Drift/SQLite is the source
+of truth; Supabase backend + sync exists as skeleton but is **disabled**
+(commented out in `main.dart`) — sync is the headline post-MVP feature.
 
 ## Read in this order
 
 1. `docs/long-lived/DECISIONS.md` — why things are the way they are. The
    single most useful doc. Keep it updated after design choices.
 2. `docs/long-lived/PROGRESS REPORT.md` — tail of file = latest work logs.
-3. `docs/PLANNED_FEATURES.md` — the current feature queue with per-§ specs
-   and owner answers to open questions (Q1–Q5 at bottom).
+3. `docs/long-lived/CHANGELOG.md` — release history (v1.0.0 at top).
 4. `docs/long-lived/API.md` + `GLOSSARY.md` — provider/service surface and
    domain terms (verseId encoding, .bdat, book maps).
-5. `docs/CONTEXT.md` / `docs/PLAN.md` — scratch docs from the *previous*
-   task (reading-position persistence + §2 pill, done). Historical.
+5. `docs/completed/` — finished feature specs (PLANNED_FEATURES.md,
+   UI_OVERHAUL.md). Historical; all sections shipped.
 
 ⚠️ Long-lived docs drift: API.md's routes table predates `/search`; the
 prescriptive UI in SCREEN MAP / DESIGN SYSTEM / UI_UX does **not** match
-the actual app UI — owner says that's fine, a **UI revamp comes later**.
-Don't "fix" UI toward those docs unprompted.
+the actual app UI — the shipped "calm study" overhaul
+(docs/completed/UI_OVERHAUL.md) is the design authority until DESIGN
+SYSTEM.md is backfilled.
 
-## State of the feature queue (PLANNED_FEATURES.md)
+## State of the project — v1.0.0, MVP complete (2026-07-21)
 
-- ✅ §1 chapter indicator, §2 translation pill grid, §3 dropdown
-  positioning/highlight, §4 collapsible sidebar, §7 search icon in header.
-- ✅ (bonus) cross-session reading-position persistence
-  (`reading_position.*` SharedPreferences keys via StorageService,
-  `readingPositionProvider` in `core/providers/database_provider.dart`,
-  saves debounced 400 ms).
-- ⏭️ **Next: §5 verse selection action panel** (highlights R/G/B presets +
-  custom picker, bookmark/note/copy/share, Compare entry; mobile = bottom
-  sheet per Q2). Groundwork exists: desktop reader already has tap-driven
-  multi-verse selection (`_selectedVerseKeys` in `_ReaderContentState`,
-  keyed `book|chapter|verse`, non-contiguous OK) with a stub FAB.
-- Then **§6 compare panel**, which depends on §5. Owner addition
-  (2026-07-21): inside the split-view compare pane there must be an
-  **"open full screen" action** — a new routed screen showing just the
-  selected verse(s) + all-translation comparison, with normal back
-  navigation (see §6 spec in PLANNED_FEATURES.md).
+Everything in the PLANNED_FEATURES queue shipped: §1–§3 reader nav
+polish, §5 verse action panel (highlights/bookmark/note/copy/share), §6
+compare (split + full-screen `/compare`), §7 search; plus search/
+bookmarks/notes screens, reading-position persistence, the "calm study"
+UI overhaul, and non-blocking bulk translation import with per-file
+progress. §4's collapsible sidebar was later **simplified to permanent
+icons-only** (owner, 2026-07-21) — no collapse state, no
+sidebar_provider.
+
+**Not in MVP / next up:** Supabase sync (skeleton disabled in main.dart);
+mobile-specific UI (paused). No active feature queue — new work starts
+from owner requests.
 
 ## Codebase mental map
 
@@ -62,7 +59,7 @@ Don't "fix" UI toward those docs unprompted.
   (currentTranslation/Book/Chapter) + `visibleChapterProvider`.
 - Riverpod 3 **Notifier API only** (no StateProvider); go_router in
   `core/routing/app_router.dart`; ShellRoute wraps main destinations with
-  `AppShell` (collapsible rail on desktop).
+  `AppShell` (fixed icons-only rail on desktop, tooltips).
 - Persistence: prefs via `StorageService` singleton (inits before runApp →
   sync getters are safe in provider `build()`); Drift `AppDatabase` in
   `lib/database/app_database.dart` (⚠️ its `ReadingPosition` row class
@@ -79,9 +76,8 @@ Don't "fix" UI toward those docs unprompted.
   conflict (flutter_native_splash vs pinned meta) — analyze/pub fail here;
   don't try to fix the config.
 - Batched delivery with a per-batch work-log entry appended to
-  `docs/long-lived/PROGRESS REPORT.md`; mark sections ✅ in
-  PLANNED_FEATURES.md when done. Update DECISIONS.md after significant
-  choices.
+  `docs/long-lived/PROGRESS REPORT.md` + a CHANGELOG entry. Update
+  DECISIONS.md after significant choices.
 - Translation switching must NEVER touch book/chapter (providers or
   persisted key) — `saveTranslationOnly()` exists for this.
 - Features must not import each other; shared code → `core/`. Widgets

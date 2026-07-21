@@ -1,5 +1,14 @@
 # 🚀 Bible Project – Progress Report
 
+**Current version:** 1.0.0 — **MVP complete** (2026-07-21; sync is post-MVP)
+**Newest work logs are at the bottom of this file.**
+
+---
+
+*Original report below (2026-07-14, v0.2.1 — first offline milestone):*
+
+---
+
 **Date:** 2026-07-14  
 **Version:** 0.2.1 (Hotfix: Multi‑file import support)  
 **Milestone:** First successful translation import & offline reading
@@ -394,3 +403,23 @@ Owner chose the "calm study" direction (warm paper surfaces, deep ink accent, Li
 
 ### Batch 6: Docs — ✅ (backfill of DESIGN SYSTEM.md deferred until owner signs off on the look)
 - This work log + CHANGELOG; UI_OVERHAUL.md remains ACTIVE authority.
+- Owner adjustment after review: the 680px reading measure was removed — scripture is full-width (padding 32 only). `AppLayout.readerColumnWidth` token deleted; UI_OVERHAUL.md §2.4 updated.
+
+---
+
+## 🔨 Work Log – 2026-07-21 (v1.0.0 — MVP COMPLETE 🎉)
+
+Owner declared the MVP complete. Sync is knowingly absent (Supabase skeleton stays disabled) and is the headline post-MVP feature. `AppInfo.version` → **1.0.0** (pubspec was already 1.0.0+1).
+
+Final pre-release changes:
+
+### Sidebar simplified — icons-only
+- The §4 expand/collapse state removed entirely: rail is always 56px, icons + tooltips (owner: "the UI is explanatory enough"). `_Sidebar` is now a plain StatelessWidget; `core/providers/sidebar_provider.dart` deleted; `sidebar.collapsed` key + getter/setter removed from `StorageService`.
+
+### Non-blocking bulk translation import (last UX fix)
+- `TranslationRepository.importFromFile`: parsing (file read + `jsonDecode` of a whole Bible + verse-id math + book-map JSON prep) moved to a background isolate via `compute` → top-level `_parseBdatFile` returning plain-data `ParsedBdat` (parallel int/String lists across the isolate boundary). Main isolate only copies the file and does the Drift writes. Insert/update companion construction deduplicated.
+- Translation Manager: batch imports show a **progress card** — overall `Importing N of M…` bar + per-file status rows (pending ⏱ / importing spinner / done ✓ / failed ✗). Imports run sequentially (DB write is the serial part), but the installed list refreshes after **each** file, so imported translations can be activated and read while the rest load. Fresh installs auto-activate the first success immediately.
+- Toast policy applied: no success snackbar (the refreshed list/card is the confirmation); on failure the card stays up with failed files marked + one error snackbar. Card is dismissible once the batch ends.
+
+### MVP scope shipped (v1.0.0)
+Offline `.bdat` import · Drift/SQLite storage · reader (red-letter, highlights, verse selection/action panel) · compare (split + full-screen) · search · bookmarks · notes · translation manager · settings (theme, font size, verse numbers, default translation) · reading-position persistence · "calm study" design system. **Not in MVP:** sync, mobile-specific UI (paused per DECISIONS.md).

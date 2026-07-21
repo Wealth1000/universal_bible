@@ -1151,64 +1151,58 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
     // Removed Scrollbar wrapper as requested.
     // SelectionArea keeps mouse text-selection available for copying, but
     // it no longer drives the action overlay — verse taps do.
+    // Full-width scripture (owner preference — no max-width measure).
     return SelectionArea(
-      child: Center(
-        child: ConstrainedBox(
-          // Comfortable measure for long-form reading (UI_OVERHAUL §2.4).
-          constraints:
-              const BoxConstraints(maxWidth: AppLayout.readerColumnWidth),
-          child: ListView(
-            key: _scrollKey,
-            controller: _scrollController,
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.s32,
-              vertical: AppSpacing.s24,
-            ),
-            children: [
-              for (var i = 0; i < _chapters.length; i++) ...[
-                if (i > 0) const SizedBox(height: AppSpacing.s48),
-                _ChapterHeader(key: _chapterHeaderKeys[i], chapter: _chapters[i]),
-                const SizedBox(height: AppSpacing.s48),
-                ..._chapters[i].verses.map((verse) {
-                  final vRef = VerseRef(
-                    _chapters[i].book,
-                    _chapters[i].chapter,
-                    verse.verse,
-                  );
-                  return _VerseTile(
-                    verseNumber: verse.verse,
-                    text: verse.verseText,
-                    selected: selectedVerses.contains(vRef),
-                    highlightColor: _highlightsByVerse[vRef],
-                    fontSize: fontSize,
-                    showVerseNumber: showVerseNumbers,
-                    onTap: () => _toggleVerse(_chapters[i], verse),
-                  );
-                }),
-              ],
-              const SizedBox(height: AppSpacing.s48),
-              if (widget.continuousReading && !_reachedEnd)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: AppSpacing.s16),
-                  child: Center(
-                    child: SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  ),
-                )
-              else
-                _ChapterNavButtons(
-                  prevLabel: widget.prevLabel,
-                  nextLabel: widget.nextLabel,
-                  onPrev: widget.onPrev,
-                  onNext: widget.onNext,
-                ),
-              const SizedBox(height: AppSpacing.s64),
-            ],
-          ),
+      child: ListView(
+        key: _scrollKey,
+        controller: _scrollController,
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.s32,
+          vertical: AppSpacing.s24,
         ),
+        children: [
+          for (var i = 0; i < _chapters.length; i++) ...[
+            if (i > 0) const SizedBox(height: AppSpacing.s48),
+            _ChapterHeader(key: _chapterHeaderKeys[i], chapter: _chapters[i]),
+            const SizedBox(height: AppSpacing.s48),
+            ..._chapters[i].verses.map((verse) {
+              final vRef = VerseRef(
+                _chapters[i].book,
+                _chapters[i].chapter,
+                verse.verse,
+              );
+              return _VerseTile(
+                verseNumber: verse.verse,
+                text: verse.verseText,
+                selected: selectedVerses.contains(vRef),
+                highlightColor: _highlightsByVerse[vRef],
+                fontSize: fontSize,
+                showVerseNumber: showVerseNumbers,
+                onTap: () => _toggleVerse(_chapters[i], verse),
+              );
+            }),
+          ],
+          const SizedBox(height: AppSpacing.s48),
+          if (widget.continuousReading && !_reachedEnd)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: AppSpacing.s16),
+              child: Center(
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            )
+          else
+            _ChapterNavButtons(
+              prevLabel: widget.prevLabel,
+              nextLabel: widget.nextLabel,
+              onPrev: widget.onPrev,
+              onNext: widget.onNext,
+            ),
+          const SizedBox(height: AppSpacing.s64),
+        ],
       ),
     );
   }

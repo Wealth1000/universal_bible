@@ -2,6 +2,12 @@
 
 Newest at the top. Dates are work-log dates from PROGRESS REPORT.md.
 
+## 2026-07-21 — v1.0.0 (MVP complete)
+
+- **Version bumped to 1.0.0** (`AppInfo.version`). Owner declared the MVP complete: offline reading, import, search, bookmarks, notes, highlights, compare, settings, theming. Sync (Supabase) intentionally NOT included — remains disabled skeleton, post-MVP.
+- **Non-blocking translation import with progress UI**: `.bdat` parsing (file read + jsonDecode + verse math) moved to a background isolate (`compute` → top-level `_parseBdatFile` returning plain-data `ParsedBdat`), so the UI no longer freezes during bulk imports. Translation Manager shows a progress card (overall bar + per-file pending/importing/done/failed rows); the installed list refreshes after **each** file so already-imported translations can be activated and read while the rest load; with nothing installed, the first success becomes active immediately. Success snackbar dropped (toast policy — the list is the confirmation); card stays visible on failure.
+- **Sidebar simplified to icons-only**: the expand/collapse state was removed entirely — the rail is always 56px icons-with-tooltips (the UI is self-explanatory). `sidebar_provider.dart` deleted; `sidebar.collapsed` pref removed from StorageService. Supersedes §4's collapsible design.
+
 ## 2026-07-21
 
 - **UI overhaul — "calm study"** (docs/UI_OVERHAUL.md): design tokens (`core/design/app_tokens.dart`) + rebuilt theme — warm paper/charcoal surfaces, single deep-ink accent, Literata for scripture/display + Inter for UI chrome. Reader: 680px measure, quiet top bar, ink accent-bar selection, caps chapter header. All hardcoded colors (#2E434C, #FFFDE7, Colors.green/red/orange) replaced by tokens; duplicate theme provider removed.
