@@ -148,7 +148,7 @@ class _BookmarksPageState extends ConsumerState<BookmarksPageDesktop> {
                     child: ListView.separated(
                       padding: const EdgeInsets.all(24),
                       itemCount: _bookmarks!.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      separatorBuilder: (_, _) => const Divider(height: 1),
                       itemBuilder: (context, index) {
                         final b = _bookmarks![index];
                         final reference =
