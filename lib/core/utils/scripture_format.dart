@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:universal_bible/core/design/app_tokens.dart';
 
 /// Sentinel markers for words-of-Christ segments. Unicode private-use
 /// characters — guaranteed never to appear in actual scripture text, so
@@ -122,8 +123,6 @@ List<TextSpan> buildScriptureSpans(
   return spans;
 }
 
-/// Theme-aware red for words of Christ.
+/// Theme-aware red for words of Christ (token: AppColors.wordsOfChrist).
 Color wordsOfChristColorFor(Brightness brightness) =>
-    brightness == Brightness.dark
-        ? const Color(0xFFEF5350) // lighter red for dark backgrounds
-        : const Color(0xFFB71C1C); // deep red for light backgrounds
+    AppColors.wordsOfChrist(brightness);

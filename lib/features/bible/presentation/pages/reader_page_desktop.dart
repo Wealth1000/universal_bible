@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:universal_bible/core/design/app_tokens.dart';
 import 'package:universal_bible/core/providers/reading_settings_provider.dart';
 import 'package:universal_bible/core/providers/translation_repo_provider.dart';
 import 'package:universal_bible/core/utils/book_name_utils.dart';
@@ -300,10 +301,9 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
     });
 
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
     final colorScheme = theme.colorScheme;
 
-    final primaryColor = isDark ? colorScheme.primary : const Color(0xFF2E434C);
+    final primaryColor = colorScheme.primary;
     final onSurfaceVariant = colorScheme.onSurfaceVariant;
     final surfaceColor = theme.scaffoldBackgroundColor;
 
@@ -487,17 +487,22 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
             ),
             Expanded(
               flex: 4,
-              child: CompareColumn(
-                refs: _sortedSelection(),
-                bookNameFor: (bookNum) => _books!
-                    .firstWhere(
-                      (b) => b.number == bookNum,
-                      orElse: () => _books!.first,
-                    )
-                    .name,
-                onClose: () =>
-                    ref.read(compareOpenProvider.notifier).set(false),
-                onExpand: () => context.push('/compare'),
+              child: ColoredBox(
+                // Chrome surface so the pane reads as chrome next to the
+                // paper reader (UI_OVERHAUL §3.2).
+                color: colorScheme.surfaceContainerLow,
+                child: CompareColumn(
+                  refs: _sortedSelection(),
+                  bookNameFor: (bookNum) => _books!
+                      .firstWhere(
+                        (b) => b.number == bookNum,
+                        orElse: () => _books!.first,
+                      )
+                      .name,
+                  onClose: () =>
+                      ref.read(compareOpenProvider.notifier).set(false),
+                  onExpand: () => context.push('/compare'),
+                ),
               ),
             ),
           ],
@@ -742,27 +747,17 @@ class _TopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
-    final primaryColor = isDark ? colorScheme.primary : const Color(0xFF2E434C);
-    final surfaceColor = colorScheme.surface;
     final chapterToShow = displayChapter ?? chapter;
 
     // Use the actual translation ID or a fallback
     final displayTranslation = translationId?.toUpperCase() ?? 'KJV';
 
+    // Quiet chrome bar (UI_OVERHAUL §3.2): chrome surface, no shadow, no
+    // border — the paper/chrome shift is the separation.
     return Container(
-      height: 64,
-      padding: const EdgeInsets.symmetric(horizontal: 32),
-      decoration: BoxDecoration(
-        color: surfaceColor.withValues(alpha: 0.8),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      height: AppLayout.topBarHeight,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s32),
+      color: colorScheme.surfaceContainerLow,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -785,13 +780,17 @@ class _TopBar extends StatelessWidget {
                   }
                 },
                 underline: const SizedBox.shrink(),
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: primaryColor,
+                style: AppTypography.uiLabel.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.onSurface,
                 ),
-                icon: const Icon(Icons.expand_more),
+                icon: Icon(
+                  Icons.expand_more,
+                  size: 18,
+                  color: colorScheme.onSurfaceVariant,
+                ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: AppSpacing.s16),
               DropdownButton<int>(
                 // Show whichever chapter is currently visible on screen.
                 // Fall back to the navigation chapter if the visible one is
@@ -809,29 +808,20 @@ class _TopBar extends StatelessWidget {
                   }
                 },
                 underline: const SizedBox.shrink(),
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: primaryColor,
+                style: AppTypography.uiLabel.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.onSurface,
                 ),
-                icon: const Icon(Icons.expand_more),
+                icon: Icon(
+                  Icons.expand_more,
+                  size: 18,
+                  color: colorScheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),
           Row(
             children: [
-              // Chapter label is shown separately above the dropdown; it's
-              // already displayed in the dropdown's value – we can keep it
-              // as is, but for clarity we'll also show a static label.
-              // Padding(
-              //   padding: const EdgeInsets.symmetric(horizontal: 8.0),
-              //   child: Text(
-              //     'Chapter $chapterToShow',
-              //     style: theme.textTheme.titleMedium?.copyWith(
-              //       fontWeight: FontWeight.w700,
-              //       color: primaryColor,
-              //     ),
-              //   ),
-              // ),
               // Search shortcut (§7): secondary entry point to the Search
               // screen, alongside the sidebar item.
               IconButton(
@@ -839,30 +829,36 @@ class _TopBar extends StatelessWidget {
                 tooltip: 'Search',
                 onPressed: () => context.go('/search'),
               ),
-              const SizedBox(width: 8),
-              // Translation pill (§2): opens the grid dropdown.
+              const SizedBox(width: AppSpacing.s8),
+              // Translation pill (§2): outlined, quiet; abbreviation in ink.
               Semantics(
                 button: true,
                 label:
                     'Active translation: ${translationName ?? displayTranslation}. Tap to switch.',
-                child: TextButton(
+                child: OutlinedButton(
                   key: translationPillKey,
                   onPressed: onTranslationTap,
-                  style: TextButton.styleFrom(
-                    backgroundColor: colorScheme.primaryContainer,
-                    foregroundColor: colorScheme.onPrimaryContainer,
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: colorScheme.outlineVariant),
+                    foregroundColor: colorScheme.primary,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.s16,
+                      vertical: AppSpacing.s8,
+                    ),
+                    textStyle: AppTypography.scriptureRef,
                     shape: const StadiumBorder(),
                   ),
                   child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(displayTranslation),
-                      const SizedBox(width: 4),
-                      const Icon(Icons.expand_more, size: 18),
+                      const SizedBox(width: AppSpacing.s4),
+                      const Icon(Icons.expand_more, size: 16),
                     ],
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: AppSpacing.s8),
               PopupMenuButton<String>(
                 icon: Icon(Icons.more_vert, color: colorScheme.onSurfaceVariant),
                 tooltip: 'Reader options',
@@ -1156,53 +1152,63 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
     // SelectionArea keeps mouse text-selection available for copying, but
     // it no longer drives the action overlay — verse taps do.
     return SelectionArea(
-      child: ListView(
-        key: _scrollKey,
-        controller: _scrollController,
-        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-        children: [
-          for (var i = 0; i < _chapters.length; i++) ...[
-            if (i > 0) const SizedBox(height: 48),
-            _ChapterHeader(key: _chapterHeaderKeys[i], chapter: _chapters[i]),
-            const SizedBox(height: 48),
-            ..._chapters[i].verses.map((verse) {
-              final vRef = VerseRef(
-                _chapters[i].book,
-                _chapters[i].chapter,
-                verse.verse,
-              );
-              return _VerseTile(
-                verseNumber: verse.verse,
-                text: verse.verseText,
-                selected: selectedVerses.contains(vRef),
-                highlightColor: _highlightsByVerse[vRef],
-                fontSize: fontSize,
-                showVerseNumber: showVerseNumbers,
-                onTap: () => _toggleVerse(_chapters[i], verse),
-              );
-            }),
-          ],
-          const SizedBox(height: 48),
-          if (widget.continuousReading && !_reachedEnd)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: Center(
-                child: SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              ),
-            )
-          else
-            _ChapterNavButtons(
-              prevLabel: widget.prevLabel,
-              nextLabel: widget.nextLabel,
-              onPrev: widget.onPrev,
-              onNext: widget.onNext,
+      child: Center(
+        child: ConstrainedBox(
+          // Comfortable measure for long-form reading (UI_OVERHAUL §2.4).
+          constraints:
+              const BoxConstraints(maxWidth: AppLayout.readerColumnWidth),
+          child: ListView(
+            key: _scrollKey,
+            controller: _scrollController,
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.s32,
+              vertical: AppSpacing.s24,
             ),
-          const SizedBox(height: 64),
-        ],
+            children: [
+              for (var i = 0; i < _chapters.length; i++) ...[
+                if (i > 0) const SizedBox(height: AppSpacing.s48),
+                _ChapterHeader(key: _chapterHeaderKeys[i], chapter: _chapters[i]),
+                const SizedBox(height: AppSpacing.s48),
+                ..._chapters[i].verses.map((verse) {
+                  final vRef = VerseRef(
+                    _chapters[i].book,
+                    _chapters[i].chapter,
+                    verse.verse,
+                  );
+                  return _VerseTile(
+                    verseNumber: verse.verse,
+                    text: verse.verseText,
+                    selected: selectedVerses.contains(vRef),
+                    highlightColor: _highlightsByVerse[vRef],
+                    fontSize: fontSize,
+                    showVerseNumber: showVerseNumbers,
+                    onTap: () => _toggleVerse(_chapters[i], verse),
+                  );
+                }),
+              ],
+              const SizedBox(height: AppSpacing.s48),
+              if (widget.continuousReading && !_reachedEnd)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: AppSpacing.s16),
+                  child: Center(
+                    child: SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                )
+              else
+                _ChapterNavButtons(
+                  prevLabel: widget.prevLabel,
+                  nextLabel: widget.nextLabel,
+                  onPrev: widget.onPrev,
+                  onNext: widget.onNext,
+                ),
+              const SizedBox(height: AppSpacing.s64),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1216,24 +1222,22 @@ class _ChapterHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Center(
       child: Column(
         children: [
           Text(
             chapter.bookName,
-            style: theme.textTheme.headlineLarge?.copyWith(
-              fontWeight: FontWeight.w700,
-              color: colorScheme.primary,
+            textAlign: TextAlign.center,
+            style: AppTypography.display.copyWith(
+              color: colorScheme.onSurface,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.s8),
           Text(
-            'Chapter ${chapter.chapter}',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontStyle: FontStyle.italic,
+            '—  CHAPTER ${chapter.chapter}  —',
+            style: AppTypography.scriptureRef.copyWith(
               color: colorScheme.onSurfaceVariant,
             ),
           ),
@@ -1339,13 +1343,9 @@ class _VerseTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
-    final onSurfaceVariant = colorScheme.onSurfaceVariant;
+    final brightness = theme.brightness;
 
-    final baseStyle = theme.textTheme.bodyLarge!.copyWith(
-      fontFamily: 'Literata',
-      fontSize: fontSize,
-      height: 1.6,
+    final baseStyle = AppTypography.scripture(fontSize).copyWith(
       color: colorScheme.onSurface,
     );
 
@@ -1358,23 +1358,32 @@ class _VerseTile extends StatelessWidget {
     final spans = buildScriptureSpans(
       normalized,
       baseStyle: baseStyle,
-      wordsOfChristColor: wordsOfChristColorFor(theme.brightness),
+      wordsOfChristColor: wordsOfChristColorFor(brightness),
     );
+
+    // Selection = warm wash + ink accent bar on the left; a selected
+    // highlighted verse keeps its highlight color with the accent bar on
+    // top (UI_OVERHAUL §3.2).
+    final selectionWash = AppColors.selectionWash(brightness);
+    final backgroundColor = selected
+        ? (highlightColor ?? selectionWash)
+        : (highlightColor ?? Colors.transparent);
 
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 4),
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.s4),
         decoration: BoxDecoration(
-          // Selection tint wins over a persisted highlight; a selected
-          // highlighted verse keeps its highlight visible via the border.
-          color: selected
-              ? (isDark ? Colors.grey.shade800 : const Color(0xFFFFFDE7))
-              : (highlightColor ?? Colors.transparent),
-          border: selected && highlightColor != null
-              ? Border.all(color: highlightColor!.withValues(alpha: 1))
+          color: backgroundColor,
+          border: selected
+              ? Border(
+                  left: BorderSide(color: colorScheme.primary, width: 2),
+                )
               : null,
-          borderRadius: BorderRadius.circular(4),
+          // No radius while the left accent border is present — Flutter
+          // forbids borderRadius with a non-uniform Border.
+          borderRadius:
+              selected ? null : BorderRadius.circular(AppRadius.small),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1384,14 +1393,14 @@ class _VerseTile extends StatelessWidget {
                 width: 40,
                 child: Text(
                   '$verseNumber',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: onSurfaceVariant.withValues(alpha: 0.5),
-                    fontWeight: FontWeight.w500,
+                  style: AppTypography.scriptureRef.copyWith(
+                    color:
+                        colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
                   ),
                   textAlign: TextAlign.right,
                 ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: AppSpacing.s16),
             ],
             Expanded(
               child: Text.rich(TextSpan(children: spans)),

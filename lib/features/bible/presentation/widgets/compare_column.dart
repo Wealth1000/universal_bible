@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:universal_bible/core/design/app_tokens.dart';
 import 'package:universal_bible/core/providers/database_provider.dart';
 import 'package:universal_bible/core/providers/translation_repo_provider.dart';
 import 'package:universal_bible/core/utils/scripture_format.dart';
@@ -152,52 +153,47 @@ class _CompareColumnState extends ConsumerState<CompareColumn> {
 
   Widget _blockWidget(ThemeData theme, _TranslationBlock block) {
     final colorScheme = theme.colorScheme;
-    final baseStyle = theme.textTheme.bodyLarge!.copyWith(
-      fontFamily: 'Literata',
-      fontSize: 15,
-      height: 1.6,
+    final baseStyle = AppTypography.scripture(15).copyWith(
       color: colorScheme.onSurface,
     );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // "ABBR → Full Name" header per spec.
+        // Abbreviation in ink caps + full name quiet (UI_OVERHAUL §3.3).
         Text.rich(
           TextSpan(
             children: [
               TextSpan(
-                text: block.translation.id,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
+                text: block.translation.id.toUpperCase(),
+                style: AppTypography.scriptureRef.copyWith(
                   color: colorScheme.primary,
                 ),
               ),
               TextSpan(
-                text: ' → ${block.translation.name}',
-                style: theme.textTheme.bodySmall?.copyWith(
+                text: '   ${block.translation.name}',
+                style: AppTypography.uiBody.copyWith(
                   color: colorScheme.onSurfaceVariant,
                 ),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSpacing.s8),
         for (var i = 0; i < widget.refs.length; i++) ...[
-          if (i > 0) const SizedBox(height: 8),
+          if (i > 0) const SizedBox(height: AppSpacing.s8),
           Text(
             '${widget.bookNameFor(widget.refs[i].book)} '
             '${widget.refs[i].chapter}:${widget.refs[i].verse}',
-            style: theme.textTheme.labelSmall?.copyWith(
+            style: AppTypography.caption.copyWith(
               color: colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 2),
           if (block.verseTexts[i] == null)
             Text(
               'Not available in this translation.',
-              style: theme.textTheme.bodySmall?.copyWith(
+              style: AppTypography.uiBody.copyWith(
                 fontStyle: FontStyle.italic,
                 color: colorScheme.onSurfaceVariant,
               ),

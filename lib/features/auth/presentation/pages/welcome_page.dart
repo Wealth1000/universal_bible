@@ -10,15 +10,10 @@ class WelcomePage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
-    // Use design system colors
-    final primaryColor = isDark
-        ? theme.colorScheme.primary
-        : const Color(0xFF2E434C);
-    final onPrimary = isDark
-        ? theme.colorScheme.onPrimary
-        : Colors.white;
+    // Ink primary comes from the theme now (UI overhaul tokens).
+    final primaryColor = theme.colorScheme.primary;
+    final onPrimary = theme.colorScheme.onPrimary;
     final surfaceColor = theme.scaffoldBackgroundColor;
     final onSurface = theme.colorScheme.onSurface;
     final onSurfaceVariant = theme.colorScheme.onSurfaceVariant;

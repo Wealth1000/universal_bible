@@ -415,9 +415,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                             title: Text(t.name),
                             subtitle: Text(t.id),
                             trailing: t.id == selectedId
-                                ? const Icon(
+                                ? Icon(
                                     Icons.check_circle,
-                                    color: Colors.green,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .primary,
                                   )
                                 : null,
                             onTap: () {

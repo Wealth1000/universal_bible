@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:universal_bible/core/design/app_tokens.dart';
 
 import '../providers/sidebar_provider.dart';
 
@@ -82,8 +83,7 @@ class _Sidebar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
     final collapsed = ref.watch(sidebarCollapsedProvider);
 
     // Find the index of the currently active destination (if any).
@@ -95,37 +95,35 @@ class _Sidebar extends ConsumerWidget {
     if (selectedIndex < 0) selectedIndex = 0;
 
     return Material(
+      // Chrome surface — the paper/chrome color shift is the separation;
+      // no border (UI_OVERHAUL §3.1).
       color: colorScheme.surfaceContainerLow,
       child: SafeArea(
         right: false,
         child: NavigationRail(
-          // Expanded: 80px is enough for "Translations" / "Bookmarks" /
-          // "Settings" to render without being clipped, even with the
-          // always-visible label. Collapsed: icons only, narrow.
-          minWidth: collapsed ? 56 : 80,
-          minExtendedWidth: 80,
+          // Expanded: 84px fits "Bookmarks" / "Settings" labels. Collapsed:
+          // icons only, narrow.
+          minWidth: collapsed ? 56 : 84,
+          minExtendedWidth: 84,
           extended: false,
           labelType: collapsed
               ? NavigationRailLabelType.none
               : NavigationRailLabelType.all,
           selectedIndex: selectedIndex,
           backgroundColor: colorScheme.surfaceContainerLow,
-          indicatorColor: colorScheme.secondaryContainer,
-          selectedIconTheme: IconThemeData(
-            color: colorScheme.onSecondaryContainer,
-          ),
+          // Active = ink pill (12% alpha), icon+label in ink.
+          indicatorColor: colorScheme.primary.withValues(alpha: 0.12),
+          indicatorShape: const StadiumBorder(),
+          selectedIconTheme: IconThemeData(color: colorScheme.primary),
           unselectedIconTheme: IconThemeData(
             color: colorScheme.onSurfaceVariant,
           ),
-          selectedLabelTextStyle: theme.textTheme.labelSmall?.copyWith(
-            color: colorScheme.onSecondaryContainer,
-            fontSize: 11,
+          selectedLabelTextStyle: AppTypography.caption.copyWith(
+            color: colorScheme.primary,
             fontWeight: FontWeight.w600,
           ),
-          unselectedLabelTextStyle: theme.textTheme.labelSmall?.copyWith(
+          unselectedLabelTextStyle: AppTypography.caption.copyWith(
             color: colorScheme.onSurfaceVariant,
-            fontSize: 11,
-            fontWeight: FontWeight.w400,
           ),
           leading: Column(
             children: [

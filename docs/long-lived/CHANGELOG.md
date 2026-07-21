@@ -4,6 +4,7 @@ Newest at the top. Dates are work-log dates from PROGRESS REPORT.md.
 
 ## 2026-07-21
 
+- **UI overhaul — "calm study"** (docs/UI_OVERHAUL.md): design tokens (`core/design/app_tokens.dart`) + rebuilt theme — warm paper/charcoal surfaces, single deep-ink accent, Literata for scripture/display + Inter for UI chrome. Reader: 680px measure, quiet top bar, ink accent-bar selection, caps chapter header. All hardcoded colors (#2E434C, #FFFDE7, Colors.green/red/orange) replaced by tokens; duplicate theme provider removed.
 - **Search, Bookmarks, Notes screens** (pre-overhaul, deliberately plain): live LIKE search over the active translation with match highlighting and jump-to-chapter; bookmarks list with previews and single-tap removal; notes list with edit-in-place and confirmed delete. Sidebar items wired (`/bookmarks`, `/notes` routes added).
 - **Fix:** compare pane no longer closes instantly on open (tree restructure was recreating reader state and clearing the selection).
 - **Settings actually wired to the reader**: font-size slider and verse-numbers toggle now live-update verse rendering; Default Translation is a fallback only (reading position wins) and no longer hijacks the active translation; fake "Clear Cache" tile removed; version now sourced from `AppInfo` (**0.6.40-beta**) in Settings and Welcome.

@@ -57,9 +57,14 @@ class VerseActionPanel extends StatelessWidget {
 
     return Material(
       elevation: 6,
-      color: colorScheme.surfaceContainerHigh,
+      shadowColor: Colors.black.withValues(alpha: 0.25),
+      color: colorScheme.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(16),
-      child: Padding(
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border.all(color: colorScheme.outlineVariant),
+          borderRadius: BorderRadius.circular(16),
+        ),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         child: Row(
           mainAxisSize: MainAxisSize.min,

@@ -362,3 +362,35 @@ Owner decision: build the missing screens BEFORE the UI overhaul (function-first
 - `app_database.dart`: `getNotesForTranslation()` (newest-updated first), `updateNoteContent(id, content, updatedAt)`, `deleteNote(id)`.
 - New `lib/features/bible/presentation/pages/notes_page_desktop.dart`: note cards (reference + date + content), tap reference → jump to chapter, edit-in-place dialog, delete WITH confirmation (notes carry user-written content, unlike single-tap bookmark removal), empty state.
 - Route `/notes` registered; sidebar item wired.
+
+---
+
+## 🔨 Work Log – 2026-07-21 (UI Overhaul — "calm study", per docs/UI_OVERHAUL.md)
+
+Owner chose the "calm study" direction (warm paper surfaces, deep ink accent, Literata for scripture/display + Inter for UI). docs/UI_OVERHAUL.md is the design authority; supersedes DESIGN SYSTEM.md until backfilled.
+
+### Batch 1: Tokens + theme — ✅
+- New `lib/core/design/app_tokens.dart`: `AppColorsLight/Dark` + brightness-resolved `AppColors` (paper/chrome/ink/hairline/selectionWash/wordsOfChrist/danger/success), `AppSpacing` (4–64), `AppRadius`, `AppLayout` (reader 680 / content 720 / top bar 56), `AppFonts`, `AppTypography` (display/title/scripture/scriptureRef/uiLabel/uiBody/caption).
+- `app_theme.dart` rebuilt: explicit ColorSchemes from tokens (no `fromSeed`); Inter app-wide with Literata opt-in; themed dividers, snackbars (floating, hairline border), dialogs, inputs, buttons (filled=ink stadium; outlined=hairline), slider/switch, tooltips.
+- Theme provider deduped: `core/providers/theme_provider.dart` (unused duplicate) DELETED; its SharedPreferences persistence merged into `core/themes/theme_provider.dart` (self-loading, key `themeMode`). Debt item cleared.
+- `scripture_format.dart` red-letter → `AppColors.wordsOfChrist` (brick red / soft coral, replacing #B71C1C/#EF5350).
+
+### Batch 2: Shell + reader — ✅
+- Rail: ink pill indicator (12% alpha, stadium), ink icons/labels via `caption`, width 84 expanded.
+- Reader top bar: 56px chrome surface, no shadow; selectors quiet ink text; translation pill now outlined hairline + ink `scriptureRef` (was filled primaryContainer).
+- Chapter header: book name in Literata 34 ink (`display`), "— CHAPTER N —" caps `scriptureRef` (was italic).
+- Verse tiles: scripture token (height 1.7); selection = warm `selectionWash` + 2px ink left accent bar (replaces the pale-yellow full-tile fill and the highlight-border special case); verse numbers `scriptureRef` at 60%.
+- Reading column constrained to 680px measure.
+- Action panel: paperElevated + hairline ring + soft shadow.
+- Compare pane sits on chrome surface next to the paper reader.
+- Removed the last `0xFF2E434C` light-mode override from the reader (ink primary now comes from the theme).
+
+### Batch 3–5: Satellites + content + peripheral — ✅
+- Compare column: block headers "ABBR   Full Name" (ink caps + quiet), refs in `caption`, scripture token at 15.
+- Welcome: hardcoded #2E434C/white removed → theme primary/onPrimary.
+- Translation manager: all `Colors.green/orange/red` snackbars/actions → `AppColors.success/danger`; active check → ink primary; #2E434C removed.
+- Settings: default-translation check → ink primary (was Colors.green).
+- Search/bookmarks/notes were already theme-driven; they inherit the new tokens wholesale (inputs, snackbars, dialogs via theme).
+
+### Batch 6: Docs — ✅ (backfill of DESIGN SYSTEM.md deferred until owner signs off on the look)
+- This work log + CHANGELOG; UI_OVERHAUL.md remains ACTIVE authority.

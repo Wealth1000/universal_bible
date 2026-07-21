@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:universal_bible/core/design/app_tokens.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:file_picker/file_picker.dart';
@@ -87,14 +88,15 @@ class _TranslationManagerPageState
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('$message $failureCount failed. Check logs.'),
-              backgroundColor: failureCount > 0 && successCount == 0
-                  ? Colors.red
-                  : Colors.orange,
+              backgroundColor: AppColors.danger(Theme.of(context).brightness),
             ),
           );
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(message), backgroundColor: Colors.green),
+            SnackBar(
+              content: Text(message),
+              backgroundColor: AppColors.success(Theme.of(context).brightness),
+            ),
           );
         }
       }
@@ -103,7 +105,10 @@ class _TranslationManagerPageState
       debugPrint('Stack trace: ${StackTrace.current}');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: AppColors.danger(Theme.of(context).brightness),
+          ),
         );
       }
     } finally {
@@ -128,7 +133,9 @@ class _TranslationManagerPageState
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.danger(Theme.of(context).brightness),
+            ),
             child: const Text('Delete'),
           ),
         ],
@@ -143,9 +150,9 @@ class _TranslationManagerPageState
       await _loadTranslations();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Translation deleted.'),
-            backgroundColor: Colors.orange,
+          SnackBar(
+            content: const Text('Translation deleted.'),
+            backgroundColor: AppColors.danger(Theme.of(context).brightness),
           ),
         );
       }
@@ -154,7 +161,7 @@ class _TranslationManagerPageState
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error deleting translation: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppColors.danger(Theme.of(context).brightness),
           ),
         );
       }
@@ -166,8 +173,8 @@ class _TranslationManagerPageState
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Active translation changed.'),
-          backgroundColor: Colors.green,
+          content: const Text('Active translation changed.'),
+          backgroundColor: AppColors.success(Theme.of(context).brightness),
         ),
       );
       // Navigate to reader
@@ -179,8 +186,7 @@ class _TranslationManagerPageState
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
-    final primaryColor = isDark ? colorScheme.primary : const Color(0xFF2E434C);
+    final primaryColor = colorScheme.primary;
     final currentTranslationId = ref.watch(currentTranslationProvider);
 
     final screenWidth = MediaQuery.of(context).size.width;
@@ -437,13 +443,13 @@ class _TranslationCard extends StatelessWidget {
                           Icon(
                             Icons.check_circle,
                             size: 14,
-                            color: Colors.green,
+                            color: colorScheme.primary,
                           ),
                           const SizedBox(width: 4),
                           Text(
                             'Active',
                             style: theme.textTheme.labelSmall?.copyWith(
-                              color: Colors.green,
+                              color: colorScheme.primary,
                               fontWeight: FontWeight.w600,
                               fontSize: 10,
                             ),
