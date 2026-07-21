@@ -481,11 +481,21 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
 
   // --- §5 selection actions ---
 
+  /// Brief confirmation for actions whose effect is NOT visible in the
+  /// reader (bookmark, note, copy/share). Visible effects (highlights)
+  /// get no toast — it would just cover the action panel.
   void _toast(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          behavior: SnackBarBehavior.floating,
+          width: 360,
+          duration: const Duration(seconds: 2),
+        ),
+      );
   }
 
   void _clearSelection() {
@@ -553,11 +563,8 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
     }
 
     ref.read(highlightsVersionProvider.notifier).bump();
-    _toast(
-      allAlreadyThisColor
-          ? 'Highlight removed from ${refs.length} verse(s)'
-          : 'Highlighted ${refs.length} verse(s)',
-    );
+    // No toast: the result is immediately visible on the verses themselves,
+    // and a snackbar would cover the action panel.
   }
 
   Future<void> _bookmarkSelection() async {
