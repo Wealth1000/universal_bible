@@ -10,8 +10,10 @@ class Translations extends Table {
   IntColumn get installedSizeBytes => integer().nullable()();
   DateTimeColumn get installedAt => dateTime().nullable()();
   TextColumn get bookMapJson => text()(); // JSON of bookMap
+  TextColumn get bookDisplayNamesJson => text().nullable()();//JSON of the book display names.
   TextColumn get filePath => text().nullable()(); // path to .bdat file
-  TextColumn get bookChapterCountsJson => text().nullable()();//JSON map of book number -> {chapterNumber: verseCount}
+  TextColumn get bookChapterCountsJson => text()
+      .nullable()(); //JSON map of book number -> {chapterNumber: verseCount}
 
   @override
   Set<Column> get primaryKey => {id};

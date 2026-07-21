@@ -3,8 +3,24 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// The last reading position persisted across sessions.
+class ReadingPositionRecord {
+  final String translationId;
+  final int book;
+  final int chapter;
+
+  const ReadingPositionRecord({
+    required this.translationId,
+    required this.book,
+    required this.chapter,
+  });
+}
+
 class StorageService {
   static const String _keyBaseDir = 'base_directory';
+  static const String _keyReadingTranslation = 'reading_position.translation';
+  static const String _keyReadingBook = 'reading_position.book';
+  static const String _keyReadingChapter = 'reading_position.chapter';
 
   late final String baseDir;
   late final SharedPreferences _prefs;
@@ -40,6 +56,39 @@ class StorageService {
     }
     baseDir = newPath;
     await _prefs.setString(_keyBaseDir, newPath);
+  }
+
+  // --- Reading position (cross-session) ---
+
+  /// The last persisted reading position, or null if never saved.
+  /// Sync because [init] loads prefs before runApp.
+  ReadingPositionRecord? get lastReadingPosition {
+    final translationId = _prefs.getString(_keyReadingTranslation);
+    final book = _prefs.getInt(_keyReadingBook);
+    final chapter = _prefs.getInt(_keyReadingChapter);
+    if (translationId == null || book == null || chapter == null) return null;
+    return ReadingPositionRecord(
+      translationId: translationId,
+      book: book,
+      chapter: chapter,
+    );
+  }
+
+  Future<void> saveReadingPosition({
+    required String translationId,
+    required int book,
+    required int chapter,
+  }) async {
+    await _prefs.setString(_keyReadingTranslation, translationId);
+    await _prefs.setInt(_keyReadingBook, book);
+    await _prefs.setInt(_keyReadingChapter, chapter);
+  }
+
+  /// Updates only the translation component of the reading position.
+  /// Book/chapter are left untouched so switching translations does not
+  /// reset where the user was reading.
+  Future<void> saveReadingTranslation(String translationId) async {
+    await _prefs.setString(_keyReadingTranslation, translationId);
   }
 
   // --- Subdirectories ---

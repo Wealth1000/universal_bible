@@ -106,6 +106,17 @@ class $TranslationsTable extends Translations
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _bookDisplayNamesJsonMeta =
+      const VerificationMeta('bookDisplayNamesJson');
+  @override
+  late final GeneratedColumn<String> bookDisplayNamesJson =
+      GeneratedColumn<String>(
+        'book_display_names_json',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
   static const VerificationMeta _filePathMeta = const VerificationMeta(
     'filePath',
   );
@@ -139,6 +150,7 @@ class $TranslationsTable extends Translations
     installedSizeBytes,
     installedAt,
     bookMapJson,
+    bookDisplayNamesJson,
     filePath,
     bookChapterCountsJson,
   ];
@@ -232,6 +244,15 @@ class $TranslationsTable extends Translations
     } else if (isInserting) {
       context.missing(_bookMapJsonMeta);
     }
+    if (data.containsKey('book_display_names_json')) {
+      context.handle(
+        _bookDisplayNamesJsonMeta,
+        bookDisplayNamesJson.isAcceptableOrUnknown(
+          data['book_display_names_json']!,
+          _bookDisplayNamesJsonMeta,
+        ),
+      );
+    }
     if (data.containsKey('file_path')) {
       context.handle(
         _filePathMeta,
@@ -292,6 +313,10 @@ class $TranslationsTable extends Translations
         DriftSqlType.string,
         data['${effectivePrefix}book_map_json'],
       )!,
+      bookDisplayNamesJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}book_display_names_json'],
+      ),
       filePath: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}file_path'],
@@ -319,6 +344,7 @@ class Translation extends DataClass implements Insertable<Translation> {
   final int? installedSizeBytes;
   final DateTime? installedAt;
   final String bookMapJson;
+  final String? bookDisplayNamesJson;
   final String? filePath;
   final String? bookChapterCountsJson;
   const Translation({
@@ -331,6 +357,7 @@ class Translation extends DataClass implements Insertable<Translation> {
     this.installedSizeBytes,
     this.installedAt,
     required this.bookMapJson,
+    this.bookDisplayNamesJson,
     this.filePath,
     this.bookChapterCountsJson,
   });
@@ -352,6 +379,9 @@ class Translation extends DataClass implements Insertable<Translation> {
       map['installed_at'] = Variable<DateTime>(installedAt);
     }
     map['book_map_json'] = Variable<String>(bookMapJson);
+    if (!nullToAbsent || bookDisplayNamesJson != null) {
+      map['book_display_names_json'] = Variable<String>(bookDisplayNamesJson);
+    }
     if (!nullToAbsent || filePath != null) {
       map['file_path'] = Variable<String>(filePath);
     }
@@ -378,6 +408,9 @@ class Translation extends DataClass implements Insertable<Translation> {
           ? const Value.absent()
           : Value(installedAt),
       bookMapJson: Value(bookMapJson),
+      bookDisplayNamesJson: bookDisplayNamesJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(bookDisplayNamesJson),
       filePath: filePath == null && nullToAbsent
           ? const Value.absent()
           : Value(filePath),
@@ -402,6 +435,9 @@ class Translation extends DataClass implements Insertable<Translation> {
       installedSizeBytes: serializer.fromJson<int?>(json['installedSizeBytes']),
       installedAt: serializer.fromJson<DateTime?>(json['installedAt']),
       bookMapJson: serializer.fromJson<String>(json['bookMapJson']),
+      bookDisplayNamesJson: serializer.fromJson<String?>(
+        json['bookDisplayNamesJson'],
+      ),
       filePath: serializer.fromJson<String?>(json['filePath']),
       bookChapterCountsJson: serializer.fromJson<String?>(
         json['bookChapterCountsJson'],
@@ -421,6 +457,7 @@ class Translation extends DataClass implements Insertable<Translation> {
       'installedSizeBytes': serializer.toJson<int?>(installedSizeBytes),
       'installedAt': serializer.toJson<DateTime?>(installedAt),
       'bookMapJson': serializer.toJson<String>(bookMapJson),
+      'bookDisplayNamesJson': serializer.toJson<String?>(bookDisplayNamesJson),
       'filePath': serializer.toJson<String?>(filePath),
       'bookChapterCountsJson': serializer.toJson<String?>(
         bookChapterCountsJson,
@@ -438,6 +475,7 @@ class Translation extends DataClass implements Insertable<Translation> {
     Value<int?> installedSizeBytes = const Value.absent(),
     Value<DateTime?> installedAt = const Value.absent(),
     String? bookMapJson,
+    Value<String?> bookDisplayNamesJson = const Value.absent(),
     Value<String?> filePath = const Value.absent(),
     Value<String?> bookChapterCountsJson = const Value.absent(),
   }) => Translation(
@@ -452,6 +490,9 @@ class Translation extends DataClass implements Insertable<Translation> {
         : this.installedSizeBytes,
     installedAt: installedAt.present ? installedAt.value : this.installedAt,
     bookMapJson: bookMapJson ?? this.bookMapJson,
+    bookDisplayNamesJson: bookDisplayNamesJson.present
+        ? bookDisplayNamesJson.value
+        : this.bookDisplayNamesJson,
     filePath: filePath.present ? filePath.value : this.filePath,
     bookChapterCountsJson: bookChapterCountsJson.present
         ? bookChapterCountsJson.value
@@ -478,6 +519,9 @@ class Translation extends DataClass implements Insertable<Translation> {
       bookMapJson: data.bookMapJson.present
           ? data.bookMapJson.value
           : this.bookMapJson,
+      bookDisplayNamesJson: data.bookDisplayNamesJson.present
+          ? data.bookDisplayNamesJson.value
+          : this.bookDisplayNamesJson,
       filePath: data.filePath.present ? data.filePath.value : this.filePath,
       bookChapterCountsJson: data.bookChapterCountsJson.present
           ? data.bookChapterCountsJson.value
@@ -497,6 +541,7 @@ class Translation extends DataClass implements Insertable<Translation> {
           ..write('installedSizeBytes: $installedSizeBytes, ')
           ..write('installedAt: $installedAt, ')
           ..write('bookMapJson: $bookMapJson, ')
+          ..write('bookDisplayNamesJson: $bookDisplayNamesJson, ')
           ..write('filePath: $filePath, ')
           ..write('bookChapterCountsJson: $bookChapterCountsJson')
           ..write(')'))
@@ -514,6 +559,7 @@ class Translation extends DataClass implements Insertable<Translation> {
     installedSizeBytes,
     installedAt,
     bookMapJson,
+    bookDisplayNamesJson,
     filePath,
     bookChapterCountsJson,
   );
@@ -530,6 +576,7 @@ class Translation extends DataClass implements Insertable<Translation> {
           other.installedSizeBytes == this.installedSizeBytes &&
           other.installedAt == this.installedAt &&
           other.bookMapJson == this.bookMapJson &&
+          other.bookDisplayNamesJson == this.bookDisplayNamesJson &&
           other.filePath == this.filePath &&
           other.bookChapterCountsJson == this.bookChapterCountsJson);
 }
@@ -544,6 +591,7 @@ class TranslationsCompanion extends UpdateCompanion<Translation> {
   final Value<int?> installedSizeBytes;
   final Value<DateTime?> installedAt;
   final Value<String> bookMapJson;
+  final Value<String?> bookDisplayNamesJson;
   final Value<String?> filePath;
   final Value<String?> bookChapterCountsJson;
   final Value<int> rowid;
@@ -557,6 +605,7 @@ class TranslationsCompanion extends UpdateCompanion<Translation> {
     this.installedSizeBytes = const Value.absent(),
     this.installedAt = const Value.absent(),
     this.bookMapJson = const Value.absent(),
+    this.bookDisplayNamesJson = const Value.absent(),
     this.filePath = const Value.absent(),
     this.bookChapterCountsJson = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -571,6 +620,7 @@ class TranslationsCompanion extends UpdateCompanion<Translation> {
     this.installedSizeBytes = const Value.absent(),
     this.installedAt = const Value.absent(),
     required String bookMapJson,
+    this.bookDisplayNamesJson = const Value.absent(),
     this.filePath = const Value.absent(),
     this.bookChapterCountsJson = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -590,6 +640,7 @@ class TranslationsCompanion extends UpdateCompanion<Translation> {
     Expression<int>? installedSizeBytes,
     Expression<DateTime>? installedAt,
     Expression<String>? bookMapJson,
+    Expression<String>? bookDisplayNamesJson,
     Expression<String>? filePath,
     Expression<String>? bookChapterCountsJson,
     Expression<int>? rowid,
@@ -605,6 +656,8 @@ class TranslationsCompanion extends UpdateCompanion<Translation> {
         'installed_size_bytes': installedSizeBytes,
       if (installedAt != null) 'installed_at': installedAt,
       if (bookMapJson != null) 'book_map_json': bookMapJson,
+      if (bookDisplayNamesJson != null)
+        'book_display_names_json': bookDisplayNamesJson,
       if (filePath != null) 'file_path': filePath,
       if (bookChapterCountsJson != null)
         'book_chapter_counts_json': bookChapterCountsJson,
@@ -622,6 +675,7 @@ class TranslationsCompanion extends UpdateCompanion<Translation> {
     Value<int?>? installedSizeBytes,
     Value<DateTime?>? installedAt,
     Value<String>? bookMapJson,
+    Value<String?>? bookDisplayNamesJson,
     Value<String?>? filePath,
     Value<String?>? bookChapterCountsJson,
     Value<int>? rowid,
@@ -636,6 +690,7 @@ class TranslationsCompanion extends UpdateCompanion<Translation> {
       installedSizeBytes: installedSizeBytes ?? this.installedSizeBytes,
       installedAt: installedAt ?? this.installedAt,
       bookMapJson: bookMapJson ?? this.bookMapJson,
+      bookDisplayNamesJson: bookDisplayNamesJson ?? this.bookDisplayNamesJson,
       filePath: filePath ?? this.filePath,
       bookChapterCountsJson:
           bookChapterCountsJson ?? this.bookChapterCountsJson,
@@ -673,6 +728,11 @@ class TranslationsCompanion extends UpdateCompanion<Translation> {
     if (bookMapJson.present) {
       map['book_map_json'] = Variable<String>(bookMapJson.value);
     }
+    if (bookDisplayNamesJson.present) {
+      map['book_display_names_json'] = Variable<String>(
+        bookDisplayNamesJson.value,
+      );
+    }
     if (filePath.present) {
       map['file_path'] = Variable<String>(filePath.value);
     }
@@ -699,6 +759,7 @@ class TranslationsCompanion extends UpdateCompanion<Translation> {
           ..write('installedSizeBytes: $installedSizeBytes, ')
           ..write('installedAt: $installedAt, ')
           ..write('bookMapJson: $bookMapJson, ')
+          ..write('bookDisplayNamesJson: $bookDisplayNamesJson, ')
           ..write('filePath: $filePath, ')
           ..write('bookChapterCountsJson: $bookChapterCountsJson, ')
           ..write('rowid: $rowid')
@@ -2983,6 +3044,7 @@ typedef $$TranslationsTableCreateCompanionBuilder =
       Value<int?> installedSizeBytes,
       Value<DateTime?> installedAt,
       required String bookMapJson,
+      Value<String?> bookDisplayNamesJson,
       Value<String?> filePath,
       Value<String?> bookChapterCountsJson,
       Value<int> rowid,
@@ -2998,6 +3060,7 @@ typedef $$TranslationsTableUpdateCompanionBuilder =
       Value<int?> installedSizeBytes,
       Value<DateTime?> installedAt,
       Value<String> bookMapJson,
+      Value<String?> bookDisplayNamesJson,
       Value<String?> filePath,
       Value<String?> bookChapterCountsJson,
       Value<int> rowid,
@@ -3054,6 +3117,11 @@ class $$TranslationsTableFilterComposer
 
   ColumnFilters<String> get bookMapJson => $composableBuilder(
     column: $table.bookMapJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get bookDisplayNamesJson => $composableBuilder(
+    column: $table.bookDisplayNamesJson,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3122,6 +3190,11 @@ class $$TranslationsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get bookDisplayNamesJson => $composableBuilder(
+    column: $table.bookDisplayNamesJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get filePath => $composableBuilder(
     column: $table.filePath,
     builder: (column) => ColumnOrderings(column),
@@ -3179,6 +3252,11 @@ class $$TranslationsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get bookDisplayNamesJson => $composableBuilder(
+    column: $table.bookDisplayNamesJson,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get filePath =>
       $composableBuilder(column: $table.filePath, builder: (column) => column);
 
@@ -3228,6 +3306,7 @@ class $$TranslationsTableTableManager
                 Value<int?> installedSizeBytes = const Value.absent(),
                 Value<DateTime?> installedAt = const Value.absent(),
                 Value<String> bookMapJson = const Value.absent(),
+                Value<String?> bookDisplayNamesJson = const Value.absent(),
                 Value<String?> filePath = const Value.absent(),
                 Value<String?> bookChapterCountsJson = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -3241,6 +3320,7 @@ class $$TranslationsTableTableManager
                 installedSizeBytes: installedSizeBytes,
                 installedAt: installedAt,
                 bookMapJson: bookMapJson,
+                bookDisplayNamesJson: bookDisplayNamesJson,
                 filePath: filePath,
                 bookChapterCountsJson: bookChapterCountsJson,
                 rowid: rowid,
@@ -3256,6 +3336,7 @@ class $$TranslationsTableTableManager
                 Value<int?> installedSizeBytes = const Value.absent(),
                 Value<DateTime?> installedAt = const Value.absent(),
                 required String bookMapJson,
+                Value<String?> bookDisplayNamesJson = const Value.absent(),
                 Value<String?> filePath = const Value.absent(),
                 Value<String?> bookChapterCountsJson = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -3269,6 +3350,7 @@ class $$TranslationsTableTableManager
                 installedSizeBytes: installedSizeBytes,
                 installedAt: installedAt,
                 bookMapJson: bookMapJson,
+                bookDisplayNamesJson: bookDisplayNamesJson,
                 filePath: filePath,
                 bookChapterCountsJson: bookChapterCountsJson,
                 rowid: rowid,

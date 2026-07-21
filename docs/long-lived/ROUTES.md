@@ -401,8 +401,6 @@ Reader
 
 Search
 
-Translations
-
 Bookmarks
 
 Notes
@@ -410,6 +408,10 @@ Notes
 Downloads
 
 Settings
+
+Secondary (reached from Settings, not the sidebar)
+
+Translations
 
 ---
 

@@ -1,27 +1,36 @@
 import 'package:flutter/material.dart';
+import 'package:universal_bible/core/design/app_tokens.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:universal_bible/core/providers/translation_repo_provider.dart';
 import 'package:universal_bible/database/app_database.dart';
 import 'package:universal_bible/features/bible/domain/reader_provider.dart';
-import '../../../../core/providers/database_provider.dart';
-import '../../../bible/data/repositories/translation_repository.dart';
-
-
-final _translationRepoProvider = Provider<TranslationRepository>((ref) {
-  final db = ref.watch(databaseProvider);
-  return TranslationRepository(db);
-});
 
 class TranslationManagerPage extends ConsumerStatefulWidget {
   const TranslationManagerPage({super.key});
 
   @override
-  ConsumerState<TranslationManagerPage> createState() => _TranslationManagerPageState();
+  ConsumerState<TranslationManagerPage> createState() =>
+      _TranslationManagerPageState();
 }
 
-class _TranslationManagerPageState extends ConsumerState<TranslationManagerPage> {
+enum _ImportStatus { pending, importing, done, failed }
+
+class _ImportJob {
+  final String fileName;
+  _ImportStatus status = _ImportStatus.pending;
+
+  _ImportJob(this.fileName);
+}
+
+class _TranslationManagerPageState
+    extends ConsumerState<TranslationManagerPage> {
   bool _isImporting = false;
+
+  /// Non-null while a batch import is running (and briefly after, until
+  /// dismissed). Drives the progress card.
+  List<_ImportJob>? _importJobs;
   List<Translation> _translations = [];
 
   @override
@@ -31,7 +40,7 @@ class _TranslationManagerPageState extends ConsumerState<TranslationManagerPage>
   }
 
   Future<void> _loadTranslations() async {
-    final repo = ref.read(_translationRepoProvider);
+    final repo = ref.read(translationRepoProvider);
     final translations = await repo.getInstalled();
     setState(() {
       _translations = translations;
@@ -39,86 +48,75 @@ class _TranslationManagerPageState extends ConsumerState<TranslationManagerPage>
   }
 
   Future<void> _importTranslation() async {
-  setState(() => _isImporting = true);
-
-  try {
     final result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['bdat'],
       allowMultiple: true,
     );
 
-    if (result == null || result.files.isEmpty) {
-      setState(() => _isImporting = false);
-      return;
-    }
+    if (result == null || result.files.isEmpty) return;
 
-    final repo = ref.read(_translationRepoProvider);
+    final files = result.files.where((f) => f.path != null).toList();
+    final jobs = [for (final f in files) _ImportJob(f.name)];
+
+    setState(() {
+      _isImporting = true;
+      _importJobs = jobs;
+    });
+
+    final repo = ref.read(translationRepoProvider);
+    final hadTranslations = _translations.isNotEmpty;
     int successCount = 0;
-    int failureCount = 0;
 
-    for (final file in result.files) {
-      final filePath = file.path;
-      if (filePath == null) continue;
-
+    // Sequential on purpose: parsing already runs on a background isolate,
+    // and the DB write is the serial part anyway. The list refreshes after
+    // each file so imported translations are readable immediately.
+    for (var i = 0; i < files.length; i++) {
+      setState(() => jobs[i].status = _ImportStatus.importing);
       try {
-        await repo.importFromFile(filePath);
+        await repo.importFromFile(files[i].path!);
         successCount++;
+        if (!mounted) return;
+        setState(() => jobs[i].status = _ImportStatus.done);
+        await _loadTranslations();
+        // Make the first successful import active right away if the user
+        // had nothing installed, so they can start reading while the rest
+        // load.
+        if (!hadTranslations &&
+            ref.read(currentTranslationProvider) == null &&
+            _translations.isNotEmpty) {
+          ref
+              .read(currentTranslationProvider.notifier)
+              .set(_translations.first.id);
+        }
       } catch (e) {
-        debugPrint('❌ Failed to import ${file.name}: $e');
-        failureCount++;
+        debugPrint('❌ Failed to import ${files[i].name}: $e');
+        if (!mounted) return;
+        setState(() => jobs[i].status = _ImportStatus.failed);
       }
     }
 
-    // Refresh the list after all imports
-    await _loadTranslations();
-
-    // Set first imported as active if any succeeded
-    if (successCount > 0) {
-      final translations = await repo.getInstalled();
-      if (translations.isNotEmpty) {
-        ref.read(currentTranslationProvider.notifier).set(translations.first.id);
-      }
-    }
-
-    // Show summary
-    if (mounted) {
-      final message = successCount > 0
-          ? 'Imported $successCount translation${successCount > 1 ? 's' : ''} successfully.'
-          : 'No translations were imported.';
-      if (failureCount > 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$message $failureCount failed. Check logs.'),
-            backgroundColor: failureCount > 0 && successCount == 0 ? Colors.red : Colors.orange,
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    }
-  } catch (e) {
-    debugPrint('Error during import: $e');
-    debugPrint('Stack trace: ${StackTrace.current}');
-    if (mounted) {
+    if (!mounted) return;
+    final failureCount = jobs
+        .where((j) => j.status == _ImportStatus.failed)
+        .length;
+    setState(() {
+      _isImporting = false;
+      // Keep the card visible if anything failed so the user can see which;
+      // otherwise it disappears — the refreshed list is the confirmation.
+      if (failureCount == 0) _importJobs = null;
+    });
+    if (failureCount > 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: Colors.red,
+          content: Text(
+            '$successCount imported, $failureCount failed. Check logs.',
+          ),
+          backgroundColor: AppColors.danger(Theme.of(context).brightness),
         ),
       );
     }
-  } finally {
-    if (mounted) {
-      setState(() => _isImporting = false);
-    }
   }
-}
 
   Future<void> _deleteTranslation(String id) async {
     final shouldDelete = await showDialog<bool>(
@@ -136,7 +134,7 @@ class _TranslationManagerPageState extends ConsumerState<TranslationManagerPage>
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             style: TextButton.styleFrom(
-              foregroundColor: Colors.red,
+              foregroundColor: AppColors.danger(Theme.of(context).brightness),
             ),
             child: const Text('Delete'),
           ),
@@ -152,9 +150,9 @@ class _TranslationManagerPageState extends ConsumerState<TranslationManagerPage>
       await _loadTranslations();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Translation deleted.'),
-            backgroundColor: Colors.orange,
+          SnackBar(
+            content: const Text('Translation deleted.'),
+            backgroundColor: AppColors.danger(Theme.of(context).brightness),
           ),
         );
       }
@@ -163,7 +161,7 @@ class _TranslationManagerPageState extends ConsumerState<TranslationManagerPage>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error deleting translation: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppColors.danger(Theme.of(context).brightness),
           ),
         );
       }
@@ -175,8 +173,8 @@ class _TranslationManagerPageState extends ConsumerState<TranslationManagerPage>
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Active translation changed.'),
-          backgroundColor: Colors.green,
+          content: const Text('Active translation changed.'),
+          backgroundColor: AppColors.success(Theme.of(context).brightness),
         ),
       );
       // Navigate to reader
@@ -188,52 +186,42 @@ class _TranslationManagerPageState extends ConsumerState<TranslationManagerPage>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
-    final primaryColor = isDark ? colorScheme.primary : const Color(0xFF2E434C);
+    final primaryColor = colorScheme.primary;
     final currentTranslationId = ref.watch(currentTranslationProvider);
 
-    // Get screen size for responsive layout
     final screenWidth = MediaQuery.of(context).size.width;
     final isDesktop = screenWidth >= 768;
 
+    // Navigation (sidebar / bottom bar) is provided by the AppShell.
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
-      appBar: _buildAppBar(context, isDesktop),
-      body: Row(
-        children: [
-          // Desktop Navigation Rail
-          if (isDesktop) _DesktopNavigationRail(selectedIndex: 2),
-          // Main Content
-          Expanded(
-            child: _buildContent(
-              context,
-              theme,
-              colorScheme,
-              currentTranslationId,
-              isDesktop,
-            ),
-          ),
-        ],
+      appBar: _buildAppBar(context),
+      body: _buildContent(
+        context,
+        theme,
+        colorScheme,
+        currentTranslationId,
+        isDesktop,
       ),
       floatingActionButton: _buildFAB(theme, primaryColor),
-      bottomNavigationBar: isDesktop ? null : _BottomNavBar(selectedIndex: 4),
     );
   }
 
-  PreferredSizeWidget _buildAppBar(BuildContext context, bool isDesktop) {
+  PreferredSizeWidget _buildAppBar(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
     return AppBar(
       elevation: 0,
+      automaticallyImplyLeading: false,
       backgroundColor: theme.scaffoldBackgroundColor,
-      leading: isDesktop
-          ? null
-          : IconButton(
-              onPressed: () => Scaffold.of(context).openDrawer(),
-              icon: const Icon(Icons.menu),
-              color: colorScheme.onSurfaceVariant,
-            ),
+      // Reached from Settings (no sidebar entry of its own), so provide an
+      // explicit way back.
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back),
+        tooltip: 'Back to Settings',
+        onPressed: () => context.go('/settings'),
+      ),
       title: Text(
         'Translations',
         style: theme.textTheme.titleLarge?.copyWith(
@@ -241,13 +229,6 @@ class _TranslationManagerPageState extends ConsumerState<TranslationManagerPage>
           color: colorScheme.primary,
         ),
       ),
-      actions: [
-        IconButton(
-          onPressed: () {},
-          icon: const Icon(Icons.more_vert),
-          color: colorScheme.onSurfaceVariant,
-        ),
-      ],
     );
   }
 
@@ -258,7 +239,6 @@ class _TranslationManagerPageState extends ConsumerState<TranslationManagerPage>
     String? currentTranslationId,
     bool isDesktop,
   ) {
-
     return Padding(
       padding: EdgeInsets.symmetric(
         horizontal: isDesktop ? 32 : 16,
@@ -291,6 +271,15 @@ class _TranslationManagerPageState extends ConsumerState<TranslationManagerPage>
             ),
           ),
 
+          // Import progress card
+          if (_importJobs != null)
+            _ImportProgressCard(
+              jobs: _importJobs!,
+              onDismiss: _isImporting
+                  ? null
+                  : () => setState(() => _importJobs = null),
+            ),
+
           // Translation List
           Expanded(
             child: _translations.isEmpty
@@ -319,11 +308,7 @@ class _TranslationManagerPageState extends ConsumerState<TranslationManagerPage>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.cloud_download,
-            size: 64,
-            color: colorScheme.outline,
-          ),
+          Icon(Icons.cloud_download, size: 64, color: colorScheme.outline),
           const SizedBox(height: 16),
           Text(
             'No translations installed yet.',
@@ -363,6 +348,117 @@ class _TranslationManagerPageState extends ConsumerState<TranslationManagerPage>
   }
 }
 
+// --- Import progress card ---
+class _ImportProgressCard extends StatelessWidget {
+  final List<_ImportJob> jobs;
+
+  /// Null while the batch is still running (card can't be dismissed).
+  final VoidCallback? onDismiss;
+
+  const _ImportProgressCard({required this.jobs, required this.onDismiss});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final doneCount = jobs
+        .where(
+          (j) =>
+              j.status == _ImportStatus.done ||
+              j.status == _ImportStatus.failed,
+        )
+        .length;
+    final running = onDismiss == null;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerLow,
+        border: Border.all(color: colorScheme.outlineVariant),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  running
+                      ? 'Importing $doneCount of ${jobs.length}…'
+                      : 'Import finished',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              if (!running)
+                IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  tooltip: 'Dismiss',
+                  onPressed: onDismiss,
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: jobs.isEmpty ? 0 : doneCount / jobs.length,
+            ),
+          ),
+          const SizedBox(height: 12),
+          for (final job in jobs)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: switch (job.status) {
+                      _ImportStatus.pending => Icon(
+                        Icons.schedule,
+                        size: 16,
+                        color: colorScheme.outline,
+                      ),
+                      _ImportStatus.importing =>
+                        const CircularProgressIndicator(strokeWidth: 2),
+                      _ImportStatus.done => Icon(
+                        Icons.check_circle,
+                        size: 16,
+                        color: AppColors.success(theme.brightness),
+                      ),
+                      _ImportStatus.failed => Icon(
+                        Icons.error,
+                        size: 16,
+                        color: AppColors.danger(theme.brightness),
+                      ),
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      job.fileName,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: job.status == _ImportStatus.failed
+                            ? AppColors.danger(theme.brightness)
+                            : colorScheme.onSurfaceVariant,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 // --- Translation Card Widget ---
 class _TranslationCard extends StatelessWidget {
   final Translation translation;
@@ -394,10 +490,7 @@ class _TranslationCard extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       decoration: BoxDecoration(
         color: cardColor,
-        border: Border.all(
-          color: borderColor,
-          width: isActive ? 2 : 1,
-        ),
+        border: Border.all(color: borderColor, width: isActive ? 2 : 1),
         borderRadius: BorderRadius.circular(32),
         boxShadow: isActive
             ? [
@@ -470,13 +563,13 @@ class _TranslationCard extends StatelessWidget {
                           Icon(
                             Icons.check_circle,
                             size: 14,
-                            color: Colors.green,
+                            color: colorScheme.primary,
                           ),
                           const SizedBox(width: 4),
                           Text(
                             'Active',
                             style: theme.textTheme.labelSmall?.copyWith(
-                              color: Colors.green,
+                              color: colorScheme.primary,
                               fontWeight: FontWeight.w600,
                               fontSize: 10,
                             ),
@@ -520,200 +613,6 @@ class _TranslationCard extends StatelessWidget {
             ],
           ),
         ],
-      ),
-    );
-  }
-}
-
-// --- Desktop Navigation Rail ---
-class _DesktopNavigationRail extends StatelessWidget {
-  final int selectedIndex;
-
-  const _DesktopNavigationRail({required this.selectedIndex});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final onSurfaceVariant = colorScheme.onSurfaceVariant;
-
-    final items = [
-      {'icon': Icons.menu_book, 'label': 'Bible', 'route': '/reader'},
-      {'icon': Icons.search, 'label': 'Search', 'route': '/search'},
-      {'icon': Icons.translate, 'label': 'Translations', 'route': '/translations'},
-      {'icon': Icons.bookmark, 'label': 'Bookmarks', 'route': '/bookmarks'},
-      {'icon': Icons.sticky_note_2, 'label': 'Notes', 'route': '/notes'},
-      {'icon': Icons.download, 'label': 'Downloads', 'route': '/downloads'},
-      {'icon': Icons.settings, 'label': 'Settings', 'route': '/settings'},
-    ];
-
-    return Container(
-      width: 72,
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLow,
-        border: Border(
-          right: BorderSide(
-            color: colorScheme.outlineVariant,
-            width: 1,
-          ),
-        ),
-      ),
-      child: Column(
-        children: [
-          const SizedBox(height: 24),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Image.asset(
-              'assets/images/app_logo.png',
-              width: 40,
-              height: 40,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Expanded(
-            child: ListView.builder(
-              itemCount: items.length,
-              itemBuilder: (context, index) {
-                final isSelected = index == selectedIndex;
-                final icon = items[index]['icon'] as IconData;
-                final label = items[index]['label'] as String;
-                final route = items[index]['route'] as String;
-                return Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? colorScheme.secondaryContainer
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(32),
-                  ),
-                  child: InkWell(
-                    onTap: () => context.go(route),
-                    borderRadius: BorderRadius.circular(32),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            icon,
-                            color: isSelected
-                                ? colorScheme.onSecondaryContainer
-                                : onSurfaceVariant,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            label,
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: isSelected
-                                  ? colorScheme.onSecondaryContainer
-                                  : onSurfaceVariant,
-                              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                              fontSize: 10,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Text(
-              'v1.0',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: onSurfaceVariant.withValues(alpha: 0.4),
-                fontSize: 10,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// --- Mobile Bottom Navigation ---
-class _BottomNavBar extends StatelessWidget {
-  final int selectedIndex;
-
-  const _BottomNavBar({required this.selectedIndex});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    final items = [
-      {'icon': Icons.menu_book, 'label': 'Bible', 'route': '/reader'},
-      {'icon': Icons.search, 'label': 'Search', 'route': '/search'},
-      {'icon': Icons.bookmark, 'label': 'Bookmarks', 'route': '/bookmarks'},
-      {'icon': Icons.sticky_note_2, 'label': 'Notes', 'route': '/notes'},
-      {'icon': Icons.settings, 'label': 'Settings', 'route': '/settings'},
-    ];
-
-    return Container(
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLowest,
-        border: Border(
-          top: BorderSide(
-            color: colorScheme.outlineVariant,
-            width: 1,
-          ),
-        ),
-      ),
-      child: SafeArea(
-        top: false,
-        child: SizedBox(
-          height: 64,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: items.asMap().entries.map((entry) {
-              final index = entry.key;
-              final item = entry.value;
-              final isSelected = index == selectedIndex;
-              final icon = item['icon'] as IconData;
-              final label = item['label'] as String;
-              final route = item['route'] as String;
-
-              return InkWell(
-                onTap: () => context.go(route),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? colorScheme.secondaryContainer
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(32),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        icon,
-                        color: isSelected
-                            ? colorScheme.onSecondaryContainer
-                            : colorScheme.onSurfaceVariant,
-                      ),
-                      Text(
-                        label,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: isSelected
-                              ? colorScheme.onSecondaryContainer
-                              : colorScheme.onSurfaceVariant,
-                          fontSize: 10,
-                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-        ),
       ),
     );
   }
