@@ -4,6 +4,8 @@ Newest at the top. Dates are work-log dates from PROGRESS REPORT.md.
 
 ## 2026-07-21
 
+- **Search, Bookmarks, Notes screens** (pre-overhaul, deliberately plain): live LIKE search over the active translation with match highlighting and jump-to-chapter; bookmarks list with previews and single-tap removal; notes list with edit-in-place and confirmed delete. Sidebar items wired (`/bookmarks`, `/notes` routes added).
+- **Fix:** compare pane no longer closes instantly on open (tree restructure was recreating reader state and clearing the selection).
 - **Settings actually wired to the reader**: font-size slider and verse-numbers toggle now live-update verse rendering; Default Translation is a fallback only (reading position wins) and no longer hijacks the active translation; fake "Clear Cache" tile removed; version now sourced from `AppInfo` (**0.6.40-beta**) in Settings and Welcome.
 - **§6 Compare panel (desktop)**: split view (reader 60% / comparison 40%) showing the selected verse(s) in every installed translation, alphabetical, live-updating with the selection; × keeps the selection, deselect-all closes. **Full-screen compare** at routed `/compare` with back navigation.
 - **§5 Verse selection action panel (desktop)**: floating toolbar on verse selection — highlight presets (R/G/B) + custom shade-grid color picker, Bookmark, Note, Copy, Share (copy-fallback with toast), Compare stub (§6), clear-selection. Highlights persist to Drift (`#AARRGGBB`) and render on verses; same-color re-apply toggles off. Selection state hoisted to `selectedVersesProvider`.

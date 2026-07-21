@@ -335,3 +335,30 @@ Owner-reported bugs: settings not wired to the reader; fake "Clear Cache" tile; 
 - **Default Translation semantics fixed** (owner: fallback only): the settings tile no longer hijacks `currentTranslationProvider`; it saves `defaultTranslation` only. Reader `_loadBooks()` resolution is now in-session ?? persisted position ?? default ?? first installed. Tile subtitle explains the fallback role.
 - **"Clear Cache" removed** — it faked success (500 ms delay + green snackbar, hardcoded "42.5 MB") and there is no cache to clear.
 - settings_page.dart internal cleanup: dropped `_prefs`/`_isLoading`/`_version` state and the save helpers; everything reads/writes through providers.
+
+---
+
+## 🔨 Work Log – 2026-07-21 (BUGFIX: compare pane instantly closed)
+
+- Opening Compare switched the Scaffold body `Column` ↔ `Row`, restructuring the tree → `_ReaderContent` state was recreated → its fresh-content callback cleared the selection (and compare state) → `compareOpen && selection.isNotEmpty` went false → pane closed on arrival (also would have silently lost scroll position).
+- Fix (`reader_page_desktop.dart`): body is now always a `Row` with the reader at a stable tree position; the divider + `CompareColumn` are conditionally appended. Reader state (selection, scroll) survives opening/closing compare.
+
+---
+
+## 🔨 Work Log – 2026-07-21 (Search, Bookmarks, Notes screens — pre-overhaul, deliberately plain)
+
+Owner decision: build the missing screens BEFORE the UI overhaul (function-first; overhaul becomes one visual pass over a complete app). Visual polish intentionally minimal.
+
+### Search — ✅
+- `app_database.dart`: `searchVerses(translationId, query, {limit: 200})` — case-insensitive LIKE over the active translation, canonical order, capped at 200 (LIKE wildcards stripped from input; no FTS table — ~31k rows is fine for local SQLite).
+- `search_page_desktop.dart` rebuilt from stub: autofocus field, 300 ms debounce, ≥3-char minimum, stale-response guard, match text bolded in results, result count / "first 200 — refine" footer. Tap → sets translation/book/chapter providers + persists reading position + `context.go('/reader')` (chapter-level; verse-level scroll doesn't exist yet — overhaul candidate).
+- Book names derived from the active translation's bookMap (ComparePageDesktop pattern); falls back to the first installed translation if the reader never ran.
+
+### Bookmarks — ✅
+- New `lib/features/bible/presentation/pages/bookmarks_page_desktop.dart`: active translation's bookmarks newest-first with verse-text previews (`getVerse`), tap → jump to chapter (same provider+persist pattern), immediate single-tap delete (UI_UX §13), empty state pointing at the reader's Save action.
+- Route `/bookmarks` registered; sidebar item wired (was `route: null` → "coming soon" snackbar).
+
+### Notes — ✅
+- `app_database.dart`: `getNotesForTranslation()` (newest-updated first), `updateNoteContent(id, content, updatedAt)`, `deleteNote(id)`.
+- New `lib/features/bible/presentation/pages/notes_page_desktop.dart`: note cards (reference + date + content), tap reference → jump to chapter, edit-in-place dialog, delete WITH confirmation (notes carry user-written content, unlike single-tap bookmark removal), empty state.
+- Route `/notes` registered; sidebar item wired.

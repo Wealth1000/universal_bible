@@ -47,8 +47,8 @@ class _NavItem {
 const _mainItems = [
   _NavItem(Icons.menu_book_outlined, Icons.menu_book, 'Bible', '/reader'),
   _NavItem(Icons.search, Icons.search, 'Search', '/search'),
-  _NavItem(Icons.bookmark_outline, Icons.bookmark, 'Bookmarks', null),
-  _NavItem(Icons.sticky_note_2_outlined, Icons.sticky_note_2, 'Notes', null),
+  _NavItem(Icons.bookmark_outline, Icons.bookmark, 'Bookmarks', '/bookmarks'),
+  _NavItem(Icons.sticky_note_2_outlined, Icons.sticky_note_2, 'Notes', '/notes'),
 ];
 
 const _settingsItem = _NavItem(

@@ -472,32 +472,37 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
 
     return Scaffold(
       backgroundColor: surfaceColor,
-      body: compareVisible
-          ? Row(
-              children: [
-                Expanded(flex: 6, child: readerColumn),
-                Container(
-                  width: 1,
-                  color: colorScheme.outlineVariant,
-                ),
-                Expanded(
-                  flex: 4,
-                  child: CompareColumn(
-                    refs: _sortedSelection(),
-                    bookNameFor: (bookNum) => _books!
-                        .firstWhere(
-                          (b) => b.number == bookNum,
-                          orElse: () => _books!.first,
-                        )
-                        .name,
-                    onClose: () =>
-                        ref.read(compareOpenProvider.notifier).set(false),
-                    onExpand: () => context.push('/compare'),
-                  ),
-                ),
-              ],
-            )
-          : readerColumn,
+      // The reader ALWAYS lives at the same position inside this Row —
+      // only the compare pane is conditionally present. Restructuring the
+      // tree (Column ↔ Row) would recreate _ReaderContent, whose
+      // fresh-content callback clears the selection and closes compare
+      // (the "compare instantly closes" bug).
+      body: Row(
+        children: [
+          Expanded(flex: 6, child: readerColumn),
+          if (compareVisible) ...[
+            Container(
+              width: 1,
+              color: colorScheme.outlineVariant,
+            ),
+            Expanded(
+              flex: 4,
+              child: CompareColumn(
+                refs: _sortedSelection(),
+                bookNameFor: (bookNum) => _books!
+                    .firstWhere(
+                      (b) => b.number == bookNum,
+                      orElse: () => _books!.first,
+                    )
+                    .name,
+                onClose: () =>
+                    ref.read(compareOpenProvider.notifier).set(false),
+                onExpand: () => context.push('/compare'),
+              ),
+            ),
+          ],
+        ],
+      ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButton: _selectionFabVisible
           ? VerseActionPanel(

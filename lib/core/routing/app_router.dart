@@ -4,6 +4,8 @@ import 'package:universal_bible/features/auth/presentation/pages/welcome_page.da
 import 'package:universal_bible/features/auth/presentation/pages/login_page.dart';
 import 'package:universal_bible/features/bible/presentation/pages/reader_page_desktop.dart';
 import 'package:universal_bible/features/bible/presentation/pages/compare_page_desktop.dart';
+import 'package:universal_bible/features/bible/presentation/pages/bookmarks_page_desktop.dart';
+import 'package:universal_bible/features/bible/presentation/pages/notes_page_desktop.dart';
 //import 'package:universal_bible/features/bible/presentation/pages/reader_page_mobile.dart';
 import 'package:universal_bible/features/search/presentation/pages/search_page_desktop.dart';
 import 'package:universal_bible/features/settings/presention/pages/settings_page.dart';
@@ -58,6 +60,14 @@ final appRouter = GoRouter(
         GoRoute(
           path: '/compare',
           builder: (context, state) => const ComparePageDesktop(),
+        ),
+        GoRoute(
+          path: '/bookmarks',
+          builder: (context, state) => const BookmarksPageDesktop(),
+        ),
+        GoRoute(
+          path: '/notes',
+          builder: (context, state) => const NotesPageDesktop(),
         ),
       ],
     ),

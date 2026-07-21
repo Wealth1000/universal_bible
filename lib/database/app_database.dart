@@ -82,6 +82,29 @@ class AppDatabase extends _$AppDatabase {
             v.verse.equals(verse)))
       .getSingleOrNull();
 
+  /// Case-insensitive substring search over a translation's verse text.
+  /// LIKE over ~31k rows is fine for local SQLite; [limit] caps the UI.
+  /// LIKE wildcards in the query are dropped (Drift's like() has no ESCAPE
+  /// support) — users search words, not patterns.
+  Future<List<Verse>> searchVerses(
+    String translationId,
+    String query, {
+    int limit = 200,
+  }) {
+    final sanitized = query.replaceAll('%', '').replaceAll('_', ' ');
+    return (select(verses)
+          ..where((v) =>
+              v.translationId.equals(translationId) &
+              v.verseText.like('%$sanitized%'))
+          ..orderBy([
+            (v) => OrderingTerm.asc(v.bookNumber),
+            (v) => OrderingTerm.asc(v.chapter),
+            (v) => OrderingTerm.asc(v.verse),
+          ])
+          ..limit(limit))
+        .get();
+  }
+
   // Notes
   Future<void> insertNote(NotesCompanion companion) =>
       into(notes).insert(companion);
@@ -94,6 +117,23 @@ class AppDatabase extends _$AppDatabase {
             n.chapter.equals(chapter) &
             n.verse.equals(verse)))
       .get();
+
+  Future<List<Note>> getNotesForTranslation(String translationId) =>
+      (select(notes)
+        ..where((n) => n.translationId.equals(translationId))
+        ..orderBy([(n) => OrderingTerm.desc(n.updatedAt)]))
+      .get();
+
+  Future<void> updateNoteContent(String id, String content, DateTime updatedAt) =>
+      (update(notes)..where((n) => n.id.equals(id))).write(
+        NotesCompanion(
+          content: Value(content),
+          updatedAt: Value(updatedAt),
+        ),
+      );
+
+  Future<void> deleteNote(String id) =>
+      (delete(notes)..where((n) => n.id.equals(id))).go();
   
   // --- Highlights ---
 Future<void> insertHighlight(HighlightsCompanion companion) =>
