@@ -1,41 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:universal_bible/core/providers/database_provider.dart';
+import 'package:universal_bible/core/app_info.dart';
+import 'package:universal_bible/core/providers/reading_settings_provider.dart';
+import 'package:universal_bible/core/providers/translation_repo_provider.dart';
 import 'package:universal_bible/core/themes/theme_provider.dart';
 import 'package:universal_bible/database/app_database.dart';
-import 'package:universal_bible/features/bible/domain/reader_provider.dart';
-import 'package:universal_bible/features/bible/data/repositories/translation_repository.dart'; // Added import
+import 'package:universal_bible/features/settings/domain/book_name_settings_provider.dart';
 import '../../../../core/services/storage_service.dart';
-
-// --- Providers for settings (Notifier API) ---
-class FontSizeNotifier extends Notifier<double> {
-  @override
-  double build() => 18.0;
-
-  void set(double value) {
-    state = value;
-  }
-}
-
-final fontSizeProvider = NotifierProvider<FontSizeNotifier, double>(
-  FontSizeNotifier.new,
-);
-
-class ShowVerseNumbersNotifier extends Notifier<bool> {
-  @override
-  bool build() => true;
-
-  void toggle(bool value) {
-    state = value;
-  }
-}
-
-final showVerseNumbersProvider =
-    NotifierProvider<ShowVerseNumbersNotifier, bool>(
-      ShowVerseNumbersNotifier.new,
-    );
 
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
@@ -45,128 +17,47 @@ class SettingsPage extends ConsumerStatefulWidget {
 }
 
 class _SettingsPageState extends ConsumerState<SettingsPage> {
-  late SharedPreferences _prefs;
-  bool _isLoading = true;
-  String _storagePath = '';
-  String _version = '1.0.0';
-
-  // Translation repository provider (local reference)
-  final _translationRepoProvider = Provider<TranslationRepository>((ref) {
-    final db = ref.watch(databaseProvider);
-    return TranslationRepository(db);
-  });
-
-  @override
-  void initState() {
-    super.initState();
-    _loadSettings();
-  }
-
-  Future<void> _loadSettings() async {
-    _prefs = await SharedPreferences.getInstance();
-
-    // Load font size
-    final fontSize = _prefs.getDouble('fontSize') ?? 18.0;
-    ref.read(fontSizeProvider.notifier).set(fontSize); // Fixed: use .set()
-
-    // Load verse numbers preference
-    final showVerseNumbers = _prefs.getBool('showVerseNumbers') ?? true;
-    ref.read(showVerseNumbersProvider.notifier).toggle(showVerseNumbers); // Fixed: use .toggle()
-
-    // Get storage path
-    _storagePath = StorageService().baseDir;
-    _version = '1.0.42-stable';
-
-    setState(() {
-      _isLoading = false;
-    });
-  }
-
-  Future<void> _saveFontSize(double value) async {
-    await _prefs.setDouble('fontSize', value);
-    ref.read(fontSizeProvider.notifier).set(value); // Fixed: use .set()
-  }
-
-  Future<void> _saveShowVerseNumbers(bool value) async {
-    await _prefs.setBool('showVerseNumbers', value);
-    ref.read(showVerseNumbersProvider.notifier).toggle(value); // Fixed: use .toggle()
-  }
-
-  Future<void> _clearCache() async {
-    try {
-      await Future.delayed(const Duration(milliseconds: 500));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Cache cleared successfully.'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error clearing cache: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
+  // Prefs load/persist through the self-loading providers in
+  // core/providers/reading_settings_provider.dart — no local copies.
+  String get _storagePath => StorageService().baseDir;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isDesktop = screenWidth >= 768;
-
     // Get current values from providers
     final currentThemeMode = ref.watch(themeProvider);
     final currentFontSize = ref.watch(fontSizeProvider);
     final showVerseNumbers = ref.watch(showVerseNumbersProvider);
-    final currentTranslationId = ref.watch(currentTranslationProvider);
+    final preserveBookNames = ref.watch(preserveOriginalBookNamesProvider);
+    final defaultTranslationId = ref.watch(defaultTranslationProvider);
 
+    // Navigation (sidebar / bottom bar) is provided by the AppShell.
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
-      appBar: _buildAppBar(context, isDesktop),
-      body: Row(
-        children: [
-          if (isDesktop) _DesktopNavigationRail(selectedIndex: 6),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _buildContent(
-                    context,
-                    theme,
-                    colorScheme,
-                    currentThemeMode,
-                    currentFontSize,
-                    showVerseNumbers,
-                    currentTranslationId,
-                  ),
-          ),
-        ],
+      appBar: _buildAppBar(context),
+      body: _buildContent(
+        context,
+        theme,
+        colorScheme,
+        currentThemeMode,
+        currentFontSize,
+        showVerseNumbers,
+        preserveBookNames,
+        defaultTranslationId,
       ),
-      bottomNavigationBar:
-          isDesktop ? null : _BottomNavBar(selectedIndex: 4),
     );
   }
 
-  PreferredSizeWidget _buildAppBar(BuildContext context, bool isDesktop) {
+  PreferredSizeWidget _buildAppBar(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
     return AppBar(
       elevation: 0,
+      automaticallyImplyLeading: false,
       backgroundColor: theme.scaffoldBackgroundColor,
-      leading: IconButton(
-        onPressed: () => context.pop(),
-        icon: const Icon(Icons.arrow_back),
-        color: colorScheme.primary,
-      ),
       title: Text(
         'Settings',
         style: theme.textTheme.titleLarge?.copyWith(
@@ -174,13 +65,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           color: colorScheme.primary,
         ),
       ),
-      actions: [
-        IconButton(
-          onPressed: () {},
-          icon: const Icon(Icons.more_vert),
-          color: colorScheme.onSurfaceVariant,
-        ),
-      ],
     );
   }
 
@@ -191,7 +75,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     ThemeMode currentThemeMode,
     double currentFontSize,
     bool showVerseNumbers,
-    String? currentTranslationId,
+    bool preserveBookNames,
+    String? defaultTranslationId,
   ) {
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
@@ -229,13 +114,20 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     context,
                     theme,
                     colorScheme,
-                    currentTranslationId,
+                    defaultTranslationId,
                   ),
+                  _buildManageTranslations(context, theme, colorScheme),
                   _buildVerseNumbersToggle(
                     context,
                     theme,
                     colorScheme,
                     showVerseNumbers,
+                  ),
+                  _buildPreserveBookNamesToggle(
+                    context,
+                    theme,
+                    colorScheme,
+                    preserveBookNames,
                   ),
                 ],
               ),
@@ -246,7 +138,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 title: 'Data & Storage',
                 children: [
                   _buildStoragePath(context, theme, colorScheme),
-                  _buildClearCache(context, theme, colorScheme),
                 ],
               ),
               const SizedBox(height: 24),
@@ -461,7 +352,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             max: 32,
             divisions: 20,
             onChanged: (value) {
-              _saveFontSize(value);
+              ref.read(fontSizeProvider.notifier).set(value);
             },
             activeColor: colorScheme.primary,
             inactiveColor: colorScheme.outlineVariant,
@@ -477,22 +368,24 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     );
   }
 
-  // --- Translation Dropdown ---
+  // --- Default Translation (fallback for fresh installs — the reader
+  // normally reopens in the last-used translation via reading-position
+  // persistence) ---
   Widget _buildTranslationDropdown(
     BuildContext context,
     ThemeData theme,
     ColorScheme colorScheme,
-    String? currentTranslationId,
+    String? defaultTranslationId,
   ) {
     return Consumer(
       builder: (context, ref, child) {
-        final translations = ref.watch(_translationRepoProvider).getInstalled();
+        final translations = ref.watch(translationRepoProvider).getInstalled();
         return FutureBuilder<List<Translation>>(
           future: translations,
           builder: (context, snapshot) {
             final list = snapshot.data ?? [];
             final selectedId =
-                currentTranslationId ?? (list.isNotEmpty ? list.first.id : '');
+                defaultTranslationId ?? (list.isNotEmpty ? list.first.id : '');
             final selectedTranslation = list.firstWhere(
               (t) => t.id == selectedId,
               orElse: () => list.isNotEmpty ? list.first : Translation(
@@ -522,23 +415,21 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                             title: Text(t.name),
                             subtitle: Text(t.id),
                             trailing: t.id == selectedId
-                                ? const Icon(
+                                ? Icon(
                                     Icons.check_circle,
-                                    color: Colors.green,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .primary,
                                   )
                                 : null,
                             onTap: () {
+                              // Fallback only — does NOT switch the reader's
+                              // active translation (use the reader pill for
+                              // that).
                               ref
-                                  .read(currentTranslationProvider.notifier)
+                                  .read(defaultTranslationProvider.notifier)
                                   .set(t.id);
                               Navigator.pop(context);
-                              _prefs.setString('defaultTranslation', t.id);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Default translation updated.'),
-                                  backgroundColor: Colors.green,
-                                ),
-                              );
                             },
                           );
                         },
@@ -564,7 +455,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                             ),
                           ),
                           Text(
-                            selectedName,
+                            '$selectedName — used when no reading position is saved',
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: colorScheme.onSurfaceVariant,
                             ),
@@ -580,6 +471,46 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           },
         );
       },
+    );
+  }
+
+  // --- Manage Translations (entry point to the translation manager) ---
+  Widget _buildManageTranslations(
+    BuildContext context,
+    ThemeData theme,
+    ColorScheme colorScheme,
+  ) {
+    return InkWell(
+      onTap: () => context.go('/translations'),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Icon(Icons.download_for_offline_outlined, color: colorScheme.secondary),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Manage Translations',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    'Install, update or remove Bible translations',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: colorScheme.outline),
+          ],
+        ),
+      ),
     );
   }
 
@@ -618,9 +549,55 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           Switch(
             value: currentValue,
             onChanged: (value) {
-              _saveShowVerseNumbers(value);
+              ref.read(showVerseNumbersProvider.notifier).set(value);
             },
             activeThumbColor: colorScheme.primary, // Fixed: changed from activeColor
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- Preserve Original Book Names Toggle ---
+  Widget _buildPreserveBookNamesToggle(
+    BuildContext context,
+    ThemeData theme,
+    ColorScheme colorScheme,
+    bool currentValue,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          Icon(Icons.history_edu, color: colorScheme.secondary),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Original Book Names',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  currentValue
+                      ? '"The First Book of Moses called Genesis"'
+                      : '"Genesis"',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: currentValue,
+            onChanged: (value) {
+              ref.read(preserveOriginalBookNamesProvider.notifier).set(value);
+            },
+            activeThumbColor: colorScheme.primary,
           ),
         ],
       ),
@@ -666,47 +643,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     );
   }
 
-  // --- Clear Cache ---
-  Widget _buildClearCache(
-    BuildContext context,
-    ThemeData theme,
-    ColorScheme colorScheme,
-  ) {
-    return InkWell(
-      onTap: _clearCache,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Icon(Icons.delete_sweep, color: Colors.red),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Clear Cache',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.red,
-                    ),
-                  ),
-                  Text(
-                    'Free up temporary data (estimated 42.5 MB)',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(Icons.chevron_right, color: Colors.red),
-          ],
-        ),
-      ),
-    );
-  }
-
   // --- Version ---
   Widget _buildVersion(
     BuildContext context,
@@ -728,7 +664,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             ),
           ),
           Text(
-            _version,
+            AppInfo.version,
             style: theme.textTheme.bodySmall?.copyWith(
               fontWeight: FontWeight.bold,
             ),
@@ -823,194 +759,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-// --- Desktop Navigation Rail ---
-class _DesktopNavigationRail extends StatelessWidget {
-  final int selectedIndex;
-
-  const _DesktopNavigationRail({required this.selectedIndex});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final onSurfaceVariant = colorScheme.onSurfaceVariant;
-
-    final items = [
-      {'icon': Icons.menu_book, 'label': 'Bible', 'route': '/reader'},
-      {'icon': Icons.search, 'label': 'Search', 'route': '/search'},
-      {'icon': Icons.translate, 'label': 'Translations', 'route': '/translations'},
-      {'icon': Icons.bookmark, 'label': 'Bookmarks', 'route': '/bookmarks'},
-      {'icon': Icons.sticky_note_2, 'label': 'Notes', 'route': '/notes'},
-      {'icon': Icons.download, 'label': 'Downloads', 'route': '/downloads'},
-      {'icon': Icons.settings, 'label': 'Settings', 'route': '/settings'},
-    ];
-
-    return Container(
-      width: 72,
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLow,
-        border: Border(
-          right: BorderSide(color: colorScheme.outlineVariant, width: 1),
-        ),
-      ),
-      child: Column(
-        children: [
-          const SizedBox(height: 24),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Image.asset(
-              'assets/images/app_logo.png',
-              width: 40,
-              height: 40,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Expanded(
-            child: ListView.builder(
-              itemCount: items.length,
-              itemBuilder: (context, index) {
-                final isSelected = index == selectedIndex;
-                final icon = items[index]['icon'] as IconData;
-                final label = items[index]['label'] as String;
-                final route = items[index]['route'] as String;
-                return Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? colorScheme.secondaryContainer
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(32),
-                  ),
-                  child: InkWell(
-                    onTap: () => context.go(route),
-                    borderRadius: BorderRadius.circular(32),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            icon,
-                            color: isSelected
-                                ? colorScheme.onSecondaryContainer
-                                : onSurfaceVariant,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            label,
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: isSelected
-                                  ? colorScheme.onSecondaryContainer
-                                  : onSurfaceVariant,
-                              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                              fontSize: 10,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Text(
-              'v1.0',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: onSurfaceVariant.withValues(alpha: 0.4),
-                fontSize: 10,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// --- Mobile Bottom Navigation ---
-class _BottomNavBar extends StatelessWidget {
-  final int selectedIndex;
-
-  const _BottomNavBar({required this.selectedIndex});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    final items = [
-      {'icon': Icons.menu_book, 'label': 'Bible', 'route': '/reader'},
-      {'icon': Icons.search, 'label': 'Search', 'route': '/search'},
-      {'icon': Icons.bookmark, 'label': 'Bookmarks', 'route': '/bookmarks'},
-      {'icon': Icons.sticky_note_2, 'label': 'Notes', 'route': '/notes'},
-      {'icon': Icons.settings, 'label': 'Settings', 'route': '/settings'},
-    ];
-
-    return Container(
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLowest,
-        border: Border(
-          top: BorderSide(color: colorScheme.outlineVariant, width: 1),
-        ),
-      ),
-      child: SafeArea(
-        top: false,
-        child: SizedBox(
-          height: 64,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: items.asMap().entries.map((entry) {
-              final index = entry.key;
-              final item = entry.value;
-              final isSelected = index == selectedIndex;
-              final icon = item['icon'] as IconData;
-              final label = item['label'] as String;
-              final route = item['route'] as String;
-
-              return InkWell(
-                onTap: () => context.go(route),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? colorScheme.secondaryContainer
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(32),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        icon,
-                        color: isSelected
-                            ? colorScheme.onSecondaryContainer
-                            : colorScheme.onSurfaceVariant,
-                      ),
-                      Text(
-                        label,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: isSelected
-                              ? colorScheme.onSecondaryContainer
-                              : colorScheme.onSurfaceVariant,
-                          fontSize: 10,
-                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
         ),
       ),
     );

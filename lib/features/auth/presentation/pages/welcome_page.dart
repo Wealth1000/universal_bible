@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:universal_bible/core/app_info.dart';
 //import 'package:universal_bible/core/themes/app_theme.dart';//TODO: Expand AppTheme.
 
 class WelcomePage extends ConsumerWidget {
@@ -9,15 +10,10 @@ class WelcomePage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
-    // Use design system colors
-    final primaryColor = isDark
-        ? theme.colorScheme.primary
-        : const Color(0xFF2E434C);
-    final onPrimary = isDark
-        ? theme.colorScheme.onPrimary
-        : Colors.white;
+    // Ink primary comes from the theme now (UI overhaul tokens).
+    final primaryColor = theme.colorScheme.primary;
+    final onPrimary = theme.colorScheme.onPrimary;
     final surfaceColor = theme.scaffoldBackgroundColor;
     final onSurface = theme.colorScheme.onSurface;
     final onSurfaceVariant = theme.colorScheme.onSurfaceVariant;
@@ -163,7 +159,7 @@ class WelcomePage extends ConsumerWidget {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Version 2.4.0', // TODO: read from pubspec
+                        'Version ${AppInfo.version}',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: outline.withValues(alpha: 0.6),
                           fontSize: 10,

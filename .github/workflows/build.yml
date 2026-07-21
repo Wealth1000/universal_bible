@@ -1,0 +1,69 @@
+# Release artifacts: Windows zip, Linux tar.gz bundle.
+# Runs on branch `release` (same as Flutter CI).
+#
+# Linux artifact: universal-bible-linux-x64.tar.gz (full Flutter bundle).
+name: Release builds
+
+on:
+  push:
+    branches: [release]
+  workflow_dispatch:
+
+concurrency:
+  group: release-builds-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows (exe + DLLs)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "stable"
+          cache: true
+
+      - run: flutter pub get
+      - run: flutter build windows --release
+
+      - name: Zip Release folder
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "build/windows/x64/runner/Release/*" `
+            -DestinationPath "universal-bible-windows-x64.zip" -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-zip
+          path: universal-bible-windows-x64.zip
+
+  linux:
+    name: Linux (bundle)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux desktop dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "stable"
+          cache: true
+
+      - run: flutter pub get
+      - run: flutter build linux --release
+
+      - name: Tar.gz bundle (primary Linux artifact)
+        run: |
+          cd build/linux/x64/release
+          tar -czvf "$GITHUB_WORKSPACE/universal-bible-linux-x64.tar.gz" bundle
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-artifacts
+          path: universal-bible-linux-x64.tar.gz
