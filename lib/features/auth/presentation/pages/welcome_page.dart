@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:universal_bible/core/app_info.dart';
 //import 'package:universal_bible/core/themes/app_theme.dart';//TODO: Expand AppTheme.
 
 class WelcomePage extends ConsumerWidget {
@@ -163,7 +164,7 @@ class WelcomePage extends ConsumerWidget {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Version 2.4.0', // TODO: read from pubspec
+                        'Version ${AppInfo.version}',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: outline.withValues(alpha: 0.6),
                           fontSize: 10,

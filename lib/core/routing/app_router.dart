@@ -3,6 +3,7 @@ import 'package:universal_bible/core/shell/app_shell.dart';
 import 'package:universal_bible/features/auth/presentation/pages/welcome_page.dart';
 import 'package:universal_bible/features/auth/presentation/pages/login_page.dart';
 import 'package:universal_bible/features/bible/presentation/pages/reader_page_desktop.dart';
+import 'package:universal_bible/features/bible/presentation/pages/compare_page_desktop.dart';
 //import 'package:universal_bible/features/bible/presentation/pages/reader_page_mobile.dart';
 import 'package:universal_bible/features/search/presentation/pages/search_page_desktop.dart';
 import 'package:universal_bible/features/settings/presention/pages/settings_page.dart';
@@ -50,6 +51,13 @@ final appRouter = GoRouter(
         GoRoute(
           path: '/search',
           builder: (context, state) => const SearchPageDesktop(),
+        ),
+        // §6: full-screen comparison of the selected verses. Pushed (not
+        // go'd) from the split-view compare pane so back returns to the
+        // reader with the split view and selection intact.
+        GoRoute(
+          path: '/compare',
+          builder: (context, state) => const ComparePageDesktop(),
         ),
       ],
     ),

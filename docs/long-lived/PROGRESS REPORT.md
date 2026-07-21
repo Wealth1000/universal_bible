@@ -299,3 +299,39 @@ Owner answers: same-color re-apply = toggle off / different color replaces; note
 
 ### Batch 4: Docs — ✅
 - PLANNED_FEATURES.md §5 marked ✅ (desktop) with implementation notes; DECISIONS.md entry (selection provider, hex format, toggle semantics, share fallback, picker choice); this work log.
+
+---
+
+## 🔨 Work Log – 2026-07-21 (§6 Compare Panel + Full-Screen Compare, Desktop)
+
+Owner answers this session: comparison **live-updates** with selection changes; **empty selection closes the pane**. Owner addition delivered: "open full screen" → routed screen with back navigation.
+
+### Batch 1: Provider + DAO + CompareColumn — ✅
+- `reader_provider.dart`: `compareOpenProvider` (`Notifier<bool>`).
+- `app_database.dart`: `getVerse(translationId, book, chapter, verse)` → `Verse?`.
+- New `lib/features/bible/presentation/widgets/compare_column.dart`: `CompareColumn(refs, bookNameFor, onClose?, onExpand?)` — installed translations sorted alphabetically by abbreviation (Q3), per-block "ABBR → Full Name" header, each selected verse as reference label + red-letter-preserving text (`normalizeResolvedScriptureText` + `buildScriptureSpans`), `Divider` between blocks; missing verse → italic "Not available in this translation."; ≤1 installed → "Install more translations" → `/translations`. Future cached keyed on the refs so it re-fetches only when the selection changes (live updates without flicker). Read-only per spec.
+
+### Batch 2: Reader split view — ✅
+- `_ReaderPageState.build()`: reader column wrapped in a `Row` when compare is visible — reader `flex: 6`, 1px divider, `CompareColumn` `flex: 4`. Pane rendered iff `compareOpen && selection.isNotEmpty` → deselecting all verses closes it; the pane's × closes it but keeps the selection (per §6 spec); the action panel's ×/content recreation also reset `compareOpenProvider` so it can't surprise-reopen.
+- Compare button in the §5 panel now sets `compareOpenProvider` (stub toast removed).
+- `bookNameFor` threaded from the reader's loaded `_books` (translation-independent labels).
+
+### Batch 3: Full-screen route — ✅
+- New `lib/features/bible/presentation/pages/compare_page_desktop.dart`: `ComparePageDesktop` — AppBar back arrow (`context.pop()`), title "Compare — N verses", centered ≤800px `CompareColumn` (no ×/expand). Derives book number → display name itself from the active translation's bookMap + `formatBookName(preserveOriginal: …)` (can't receive reader state through a route).
+- `app_router.dart`: `/compare` route inside the ShellRoute (rail stays visible; falls back to Reader rail highlight). Opened with `context.push` from the pane's expand icon so back restores the reader with split view + selection intact.
+
+### Batch 4: Docs — ✅
+- PLANNED_FEATURES.md §6 marked ✅ (desktop) + header status; DECISIONS.md §6 entry (state model, live-update, alphabetical order, missing-verse line, push-routed full screen); CHANGELOG.md entry; this work log.
+
+---
+
+## 🔨 Work Log – 2026-07-21 (Settings wiring fixes + AppInfo)
+
+Owner-reported bugs: settings not wired to the reader; fake "Clear Cache" tile; wrong hardcoded versions (settings said 1.0.42-stable, welcome said 2.4.0).
+
+- **New `lib/core/app_info.dart`** — `AppInfo.version = '0.6.40-beta'`, single source for the version string; shown in Settings About and the Welcome page (both hardcoded strings removed). Pubspec-derived version deferred until pub deps can change.
+- **New `lib/core/providers/reading_settings_provider.dart`** — `fontSizeProvider`, `showVerseNumbersProvider`, `defaultTranslationProvider` as self-loading SharedPreferences Notifiers (moved out of settings_page.dart so the reader can use them without a cross-feature import; same prefs keys, existing values carry over).
+- **Reader wiring**: `_VerseTile` now takes `fontSize` + `showVerseNumber` from the providers — font-size slider and verse-numbers toggle live-update the reader.
+- **Default Translation semantics fixed** (owner: fallback only): the settings tile no longer hijacks `currentTranslationProvider`; it saves `defaultTranslation` only. Reader `_loadBooks()` resolution is now in-session ?? persisted position ?? default ?? first installed. Tile subtitle explains the fallback role.
+- **"Clear Cache" removed** — it faked success (500 ms delay + green snackbar, hardcoded "42.5 MB") and there is no cache to clear.
+- settings_page.dart internal cleanup: dropped `_prefs`/`_isLoading`/`_version` state and the save helpers; everything reads/writes through providers.

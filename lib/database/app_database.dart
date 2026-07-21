@@ -73,6 +73,15 @@ class AppDatabase extends _$AppDatabase {
   int _verseId(int book, int chapter, int verse) =>
       book * 1_000_000 + chapter * 1_000 + verse;
 
+  Future<Verse?> getVerse(String translationId, int book, int chapter, int verse) =>
+      (select(verses)
+        ..where((v) =>
+            v.translationId.equals(translationId) &
+            v.bookNumber.equals(book) &
+            v.chapter.equals(chapter) &
+            v.verse.equals(verse)))
+      .getSingleOrNull();
+
   // Notes
   Future<void> insertNote(NotesCompanion companion) =>
       into(notes).insert(companion);

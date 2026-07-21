@@ -85,6 +85,19 @@ final selectedVersesProvider =
       SelectedVersesNotifier.new,
     );
 
+/// Whether the §6 compare pane is open. The pane is only rendered while the
+/// selection is non-empty (empty selection closes it visually).
+class CompareOpenNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void set(bool open) => state = open;
+}
+
+final compareOpenProvider = NotifierProvider<CompareOpenNotifier, bool>(
+  CompareOpenNotifier.new,
+);
+
 /// Bumped after any highlight write so reader content re-fetches
 /// per-chapter highlights.
 class HighlightsVersionNotifier extends Notifier<int> {

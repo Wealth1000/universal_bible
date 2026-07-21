@@ -1,6 +1,6 @@
 # Planned Features
 
-**Status:** In progress — §1, §2, §3, §4, §5 (desktop), §7 done.
+**Status:** In progress — §1, §2, §3, §4, §5 (desktop), §6 (desktop), §7 done.
 **Updated:** 2026-07-21
 
 This document captures every planned feature and fix agreed upon in the design session of 2026-07-18.
@@ -157,7 +157,9 @@ The first three colors are the three primary highlight presets defined in the de
 
 ---
 
-## 6. Compare Panel
+## 6. Compare Panel ✅ Done (desktop)
+
+> **Implementation notes (2026-07-21):** desktop delivered; mobile bottom-sheet variant deferred (mobile paused). Comparison is **live-updating** — changing the selection while the pane is open updates the blocks; deselecting all verses closes the pane. × closes the pane but keeps the selection. Translation order alphabetical by abbreviation (Q3). Verses a translation lacks show "Not available in this translation." The **full-screen action** navigates to routed `/compare` (`ComparePageDesktop`) via `context.push`; back returns to the reader with split view + selection intact. Shared widget: `compare_column.dart`.
 
 ### Feature
 

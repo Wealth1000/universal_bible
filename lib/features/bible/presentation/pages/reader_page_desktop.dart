@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:universal_bible/core/providers/reading_settings_provider.dart';
 import 'package:universal_bible/core/providers/translation_repo_provider.dart';
 import 'package:universal_bible/core/utils/book_name_utils.dart';
 import 'package:universal_bible/core/utils/scripture_format.dart';
@@ -14,6 +15,7 @@ import 'package:universal_bible/features/bible/domain/book_info.dart';
 import 'package:universal_bible/features/bible/domain/chapter_navigation.dart';
 import 'package:universal_bible/features/bible/domain/continuous_reading_provider.dart';
 import 'package:universal_bible/features/bible/domain/reader_provider.dart';
+import 'package:universal_bible/features/bible/presentation/widgets/compare_column.dart';
 import 'package:universal_bible/features/bible/presentation/widgets/translation_grid.dart';
 import 'package:universal_bible/features/bible/presentation/widgets/verse_action_panel.dart';
 import 'package:uuid/uuid.dart';
@@ -103,7 +105,16 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
         translations.any((t) => t.id == persisted?.translationId)
         ? persisted?.translationId
         : null;
-    final transId = currentTransId ?? persistedTransId ?? translations.first.id;
+    // Default translation (settings) is a fallback only — used when there
+    // is no in-session value and no persisted reading position.
+    final defaultId = ref.read(defaultTranslationProvider);
+    final defaultTransId = translations.any((t) => t.id == defaultId)
+        ? defaultId
+        : null;
+    final transId = currentTransId ??
+        persistedTransId ??
+        defaultTransId ??
+        translations.first.id;
     if (currentTransId == null) {
       ref.read(currentTranslationProvider.notifier).set(transId);
     }
@@ -351,9 +362,14 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
 
     final versesFuture = _ensureVersesFuture(translationId, book, chapter);
 
-    return Scaffold(
-      backgroundColor: surfaceColor,
-      body: Column(
+    // §6: split view — reader left (~60%), comparison right (~40%). Shown
+    // while Compare is open AND the selection is non-empty (deselecting
+    // everything closes it). Selection updates flow into the pane live.
+    final selectedVerses = ref.watch(selectedVersesProvider);
+    final compareVisible =
+        ref.watch(compareOpenProvider) && selectedVerses.isNotEmpty;
+
+    final readerColumn = Column(
         children: [
           // Top Bar
           _TopBar(
@@ -452,7 +468,36 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
             ),
           ),
         ],
-      ),
+      );
+
+    return Scaffold(
+      backgroundColor: surfaceColor,
+      body: compareVisible
+          ? Row(
+              children: [
+                Expanded(flex: 6, child: readerColumn),
+                Container(
+                  width: 1,
+                  color: colorScheme.outlineVariant,
+                ),
+                Expanded(
+                  flex: 4,
+                  child: CompareColumn(
+                    refs: _sortedSelection(),
+                    bookNameFor: (bookNum) => _books!
+                        .firstWhere(
+                          (b) => b.number == bookNum,
+                          orElse: () => _books!.first,
+                        )
+                        .name,
+                    onClose: () =>
+                        ref.read(compareOpenProvider.notifier).set(false),
+                    onExpand: () => context.push('/compare'),
+                  ),
+                ),
+              ],
+            )
+          : readerColumn,
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButton: _selectionFabVisible
           ? VerseActionPanel(
@@ -470,8 +515,8 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
               // (pub is frozen) — Share copies with a distinct toast.
               onShare: () => _copySelection('Copied for sharing'),
               onCompare: () {
-                // TODO(§6): open the compare panel.
-                _toast('Compare is coming soon');
+                // §6: open the split-view compare pane (live-updating).
+                ref.read(compareOpenProvider.notifier).set(true);
               },
               onClose: _clearSelection,
             )
@@ -500,6 +545,9 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
 
   void _clearSelection() {
     ref.read(selectedVersesProvider.notifier).clear();
+    // A cleared selection also ends the compare session — otherwise the
+    // pane would surprisingly reappear on the next verse tap.
+    ref.read(compareOpenProvider.notifier).set(false);
     setState(() {
       _selectionFabVisible = false;
       _selectedText = '';
@@ -936,6 +984,7 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
         // Content recreation (navigation, translation switch) starts a
         // fresh selection — mirrors the pre-provider local-state behavior.
         ref.read(selectedVersesProvider.notifier).clear();
+        ref.read(compareOpenProvider.notifier).set(false);
         widget.onVersesSelected('');
       }
     });
@@ -1093,6 +1142,9 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
   @override
   Widget build(BuildContext context) {
     final selectedVerses = ref.watch(selectedVersesProvider);
+    // Reading settings (settings page) — live-update the verse rendering.
+    final fontSize = ref.watch(fontSizeProvider);
+    final showVerseNumbers = ref.watch(showVerseNumbersProvider);
     // Re-fetch highlights after any highlight write (§5 action panel).
     ref.listen(highlightsVersionProvider, (prev, next) => _reloadHighlights());
     // Removed Scrollbar wrapper as requested.
@@ -1119,6 +1171,8 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
                 text: verse.verseText,
                 selected: selectedVerses.contains(vRef),
                 highlightColor: _highlightsByVerse[vRef],
+                fontSize: fontSize,
+                showVerseNumber: showVerseNumbers,
                 onTap: () => _toggleVerse(_chapters[i], verse),
               );
             }),
@@ -1262,6 +1316,8 @@ class _VerseTile extends StatelessWidget {
   final String text;
   final bool selected;
   final Color? highlightColor;
+  final double fontSize;
+  final bool showVerseNumber;
   final VoidCallback onTap;
 
   const _VerseTile({
@@ -1269,6 +1325,8 @@ class _VerseTile extends StatelessWidget {
     required this.text,
     required this.selected,
     this.highlightColor,
+    required this.fontSize,
+    required this.showVerseNumber,
     required this.onTap,
   });
 
@@ -1281,7 +1339,7 @@ class _VerseTile extends StatelessWidget {
 
     final baseStyle = theme.textTheme.bodyLarge!.copyWith(
       fontFamily: 'Literata',
-      fontSize: 16,
+      fontSize: fontSize,
       height: 1.6,
       color: colorScheme.onSurface,
     );
@@ -1316,18 +1374,20 @@ class _VerseTile extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SizedBox(
-              width: 40,
-              child: Text(
-                '$verseNumber',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: onSurfaceVariant.withValues(alpha: 0.5),
-                  fontWeight: FontWeight.w500,
+            if (showVerseNumber) ...[
+              SizedBox(
+                width: 40,
+                child: Text(
+                  '$verseNumber',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: onSurfaceVariant.withValues(alpha: 0.5),
+                    fontWeight: FontWeight.w500,
+                  ),
+                  textAlign: TextAlign.right,
                 ),
-                textAlign: TextAlign.right,
               ),
-            ),
-            const SizedBox(width: 16),
+              const SizedBox(width: 16),
+            ],
             Expanded(
               child: Text.rich(TextSpan(children: spans)),
             ),
