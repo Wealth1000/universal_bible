@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:universal_bible/features/bible/domain/chapter_navigation.dart';
 
 class CurrentTranslationNotifier extends Notifier<String?> {
   @override
@@ -22,7 +23,26 @@ final currentChapterProvider = NotifierProvider<CurrentChapterNotifier, int?>(
   CurrentChapterNotifier.new,
 );
 
-// --- Visible Chapter Provider (display-only, follows scroll) ---
+// --- Visible Location Provider (display-only, follows scroll) ---
+// Tracks BOTH the book and chapter currently centred in the viewport, so the
+// reader header can follow the scroll across chapter AND book boundaries
+// (continuous reading drifts Genesis 50 -> Exodus 1). Display-only: navigation
+// still lives in currentBook/currentChapter.
+class VisibleLocationNotifier extends Notifier<ChapterRef?> {
+  @override
+  ChapterRef? build() => null;
+
+  void set(ChapterRef? ref) => state = ref;
+}
+
+final visibleLocationProvider =
+    NotifierProvider<VisibleLocationNotifier, ChapterRef?>(
+      VisibleLocationNotifier.new,
+    );
+
+// Chapter-only visible tracker retained for the (inactive) mobile reader,
+// which tracks chapter within a single book. The desktop reader uses
+// [visibleLocationProvider] so its header can follow cross-book scroll.
 class VisibleChapterNotifier extends Notifier<int?> {
   @override
   int? build() => null;
@@ -30,15 +50,16 @@ class VisibleChapterNotifier extends Notifier<int?> {
   void set(int? chapter) => state = chapter;
 }
 
+final visibleChapterProvider = NotifierProvider<VisibleChapterNotifier, int?>(
+  VisibleChapterNotifier.new,
+);
+
 final currentTranslationProvider =
     NotifierProvider<CurrentTranslationNotifier, String?>(
       CurrentTranslationNotifier.new,
     );
 final currentBookProvider = NotifierProvider<CurrentBookNotifier, int?>(
   CurrentBookNotifier.new,
-);
-final visibleChapterProvider = NotifierProvider<VisibleChapterNotifier, int?>(
-  VisibleChapterNotifier.new,
 );
 
 // --- Verse Selection (§5) ---
