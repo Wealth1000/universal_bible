@@ -409,50 +409,62 @@ class _ImportProgressCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          for (final job in jobs)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Row(
+          // Cap the per-file list so a large batch (25+ files) scrolls inside
+          // the card instead of overflowing the page column.
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 240),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: switch (job.status) {
-                      _ImportStatus.pending => Icon(
-                        Icons.schedule,
-                        size: 16,
-                        color: colorScheme.outline,
+                  for (final job in jobs)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: switch (job.status) {
+                              _ImportStatus.pending => Icon(
+                                Icons.schedule,
+                                size: 16,
+                                color: colorScheme.outline,
+                              ),
+                              _ImportStatus.importing =>
+                                const CircularProgressIndicator(strokeWidth: 2),
+                              _ImportStatus.done => Icon(
+                                Icons.check_circle,
+                                size: 16,
+                                color: AppColors.success(theme.brightness),
+                              ),
+                              _ImportStatus.failed => Icon(
+                                Icons.error,
+                                size: 16,
+                                color: AppColors.danger(theme.brightness),
+                              ),
+                            },
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              job.fileName,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: job.status == _ImportStatus.failed
+                                    ? AppColors.danger(theme.brightness)
+                                    : colorScheme.onSurfaceVariant,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
                       ),
-                      _ImportStatus.importing =>
-                        const CircularProgressIndicator(strokeWidth: 2),
-                      _ImportStatus.done => Icon(
-                        Icons.check_circle,
-                        size: 16,
-                        color: AppColors.success(theme.brightness),
-                      ),
-                      _ImportStatus.failed => Icon(
-                        Icons.error,
-                        size: 16,
-                        color: AppColors.danger(theme.brightness),
-                      ),
-                    },
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      job.fileName,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: job.status == _ImportStatus.failed
-                            ? AppColors.danger(theme.brightness)
-                            : colorScheme.onSurfaceVariant,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
                 ],
               ),
             ),
+          ),
         ],
       ),
     );

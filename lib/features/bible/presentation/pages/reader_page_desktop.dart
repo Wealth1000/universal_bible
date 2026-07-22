@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -915,6 +916,13 @@ class _ReaderContent extends ConsumerStatefulWidget {
 class _ReaderContentState extends ConsumerState<_ReaderContent> {
   final ScrollController _scrollController = ScrollController();
   final GlobalKey _scrollKey = GlobalKey();
+  // Sliver anchor for the center-anchored CustomScrollView. Chapters after
+  // (and including) [_centerIndex] render in the forward sliver keyed by
+  // [_centerKey]; chapters before it render in the reverse sliver above.
+  // Prepending increments [_centerIndex] so the anchor stays pinned to the
+  // same visual chapter and upward loading never shifts the viewport.
+  final GlobalKey _centerKey = GlobalKey();
+  int _centerIndex = 0;
   late final List<_LoadedChapter> _chapters = [widget.initialChapter];
   final List<GlobalKey> _chapterHeaderKeys = [GlobalKey()];
   bool _loadingNext = false;
@@ -1094,8 +1102,14 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
   Future<void> _maybeLoadPrev() async {
     if (_loadingPrev || _reachedStart || !mounted) return;
     if (!_scrollController.hasClients) return;
-    // Only load when scrolled within 100px of the top.
-    if (_scrollController.position.pixels > 100) return;
+    final position = _scrollController.position;
+    // Only prepend while the user is actively scrolling UP toward the top.
+    // Without this, the same near-top position while scrolling down would
+    // prepend the previous chapter — the old teleport bug.
+    if (position.userScrollDirection != ScrollDirection.forward) return;
+    // ...and only when the top of the loaded content is within reach — a
+    // pre-load buffer mirroring _maybeLoadNext's forward lookahead.
+    if (position.extentBefore > 1500) return;
 
     _loadingPrev = true;
     final first = _chapters.first;
@@ -1112,32 +1126,18 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
       return;
     }
 
-    // Capture current max extent before insertion.
-    final oldMaxExtent = _scrollController.hasClients
-        ? _scrollController.position.maxScrollExtent
-        : 0.0;
-
+    // Prepend into the reverse (above-anchor) sliver. Because that sliver
+    // grows away from the fixed center anchor, the viewport does not shift —
+    // no jumpTo compensation needed. Bump [_centerIndex] so the anchor stays
+    // pinned to the same visual chapter.
     setState(() {
       _chapters.insert(0, prev);
       _chapterHeaderKeys.insert(0, GlobalKey());
+      _centerIndex += 1;
     });
     // Pick up any highlights in the newly loaded chapter.
     _reloadHighlights();
-
-    // After layout, jump forward by the height of the inserted content so
-    // the viewport still shows the same verses.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_scrollController.hasClients) {
-        _loadingPrev = false;
-        return;
-      }
-      final newMaxExtent = _scrollController.position.maxScrollExtent;
-      final delta = newMaxExtent - oldMaxExtent;
-      if (delta > 0) {
-        _scrollController.jumpTo(_scrollController.position.pixels + delta);
-      }
-      _loadingPrev = false;
-    });
+    _loadingPrev = false;
   }
 
   @override
@@ -1148,60 +1148,120 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
     final showVerseNumbers = ref.watch(showVerseNumbersProvider);
     // Re-fetch highlights after any highlight write (§5 action panel).
     ref.listen(highlightsVersionProvider, (prev, next) => _reloadHighlights());
+
+    // Builds one chapter block (leading gap + header + verses). Called lazily
+    // by the sliver delegates, so off-screen chapters aren't built. Captures
+    // the current reading settings / selection so it re-runs on change.
+    Widget buildChapterSlice(int index) {
+      final ch = _chapters[index];
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: AppSpacing.s48),
+          _ChapterHeader(key: _chapterHeaderKeys[index], chapter: ch),
+          const SizedBox(height: AppSpacing.s48),
+          ...ch.verses.map((verse) {
+            final vRef = VerseRef(ch.book, ch.chapter, verse.verse);
+            return _VerseTile(
+              verseNumber: verse.verse,
+              text: verse.verseText,
+              selected: selectedVerses.contains(vRef),
+              highlightColor: _highlightsByVerse[vRef],
+              fontSize: fontSize,
+              showVerseNumber: showVerseNumbers,
+              onTap: () => _toggleVerse(ch, verse),
+            );
+          }),
+        ],
+      );
+    }
+
+    const horizontalPadding = EdgeInsets.symmetric(horizontal: AppSpacing.s32);
+
     // Removed Scrollbar wrapper as requested.
     // SelectionArea keeps mouse text-selection available for copying, but
     // it no longer drives the action overlay — verse taps do.
     // Full-width scripture (owner preference — no max-width measure).
+    //
+    // CustomScrollView with a center anchor pinned to the initially-loaded
+    // chapter: chapters appended below and prepended above both grow away
+    // from a fixed viewport, so upward loading (see _maybeLoadPrev) never
+    // shifts what's on screen.
     return SelectionArea(
-      child: ListView(
+      child: CustomScrollView(
         key: _scrollKey,
         controller: _scrollController,
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.s32,
-          vertical: AppSpacing.s24,
-        ),
-        children: [
-          for (var i = 0; i < _chapters.length; i++) ...[
-            if (i > 0) const SizedBox(height: AppSpacing.s48),
-            _ChapterHeader(key: _chapterHeaderKeys[i], chapter: _chapters[i]),
-            const SizedBox(height: AppSpacing.s48),
-            ..._chapters[i].verses.map((verse) {
-              final vRef = VerseRef(
-                _chapters[i].book,
-                _chapters[i].chapter,
-                verse.verse,
-              );
-              return _VerseTile(
-                verseNumber: verse.verse,
-                text: verse.verseText,
-                selected: selectedVerses.contains(vRef),
-                highlightColor: _highlightsByVerse[vRef],
-                fontSize: fontSize,
-                showVerseNumber: showVerseNumbers,
-                onTap: () => _toggleVerse(_chapters[i], verse),
-              );
-            }),
-          ],
-          const SizedBox(height: AppSpacing.s48),
-          if (widget.continuousReading && !_reachedEnd)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: AppSpacing.s16),
-              child: Center(
-                child: SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
+        center: _centerKey,
+        slivers: [
+          // Above the anchor: previous-chapter loading indicator, else a
+          // small top inset. Lives in negative scroll space.
+          SliverToBoxAdapter(
+            child: (widget.continuousReading && _loadingPrev && !_reachedStart)
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: AppSpacing.s16),
+                    child: Center(
+                      child: SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  )
+                : const SizedBox(height: AppSpacing.s24),
+          ),
+          // Chapters BEFORE the anchor, nearest-first (this sliver is laid
+          // out upward, so child 0 sits directly above the anchor).
+          SliverPadding(
+            padding: horizontalPadding,
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, i) => buildChapterSlice(_centerIndex - 1 - i),
+                childCount: _centerIndex,
               ),
-            )
-          else
-            _ChapterNavButtons(
-              prevLabel: widget.prevLabel,
-              nextLabel: widget.nextLabel,
-              onPrev: widget.onPrev,
-              onNext: widget.onNext,
             ),
-          const SizedBox(height: AppSpacing.s64),
+          ),
+          // The anchor chapter and everything after it.
+          SliverPadding(
+            key: _centerKey,
+            padding: horizontalPadding,
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, i) => buildChapterSlice(_centerIndex + i),
+                childCount: _chapters.length - _centerIndex,
+              ),
+            ),
+          ),
+          // Below the last chapter: next-chapter spinner (continuous) or the
+          // prev/next navigation buttons (paged mode / end of book).
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: horizontalPadding,
+              child: Column(
+                children: [
+                  const SizedBox(height: AppSpacing.s48),
+                  if (widget.continuousReading && !_reachedEnd)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: AppSpacing.s16),
+                      child: Center(
+                        child: SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                    )
+                  else
+                    _ChapterNavButtons(
+                      prevLabel: widget.prevLabel,
+                      nextLabel: widget.nextLabel,
+                      onPrev: widget.onPrev,
+                      onNext: widget.onNext,
+                    ),
+                  const SizedBox(height: AppSpacing.s64),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );

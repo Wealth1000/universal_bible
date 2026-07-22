@@ -8,6 +8,7 @@ import 'package:universal_bible/features/bible/presentation/pages/bookmarks_page
 import 'package:universal_bible/features/bible/presentation/pages/notes_page_desktop.dart';
 //import 'package:universal_bible/features/bible/presentation/pages/reader_page_mobile.dart';
 import 'package:universal_bible/features/search/presentation/pages/search_page_desktop.dart';
+import 'package:universal_bible/features/rhapsody/presentation/rhapsody_screen.dart';
 import 'package:universal_bible/features/settings/presention/pages/settings_page.dart';
 import 'package:universal_bible/features/translation_manager/presentation/pages/translation_manager_page.dart';
 import 'package:universal_bible/core/providers/translation_repo_provider.dart';
@@ -37,6 +38,10 @@ final appRouter = GoRouter(
         GoRoute(
           path: '/reader',
           builder: (context, state) => const ReaderPageDesktop(),
+        ),
+        GoRoute(
+          path: '/rhapsody',
+          builder: (context, state) => const RhapsodyScreen(embedded: true),
         ),
         // GoRoute(
         //   path: '/reader_mobile',
