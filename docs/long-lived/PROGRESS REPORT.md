@@ -423,3 +423,13 @@ Final pre-release changes:
 
 ### MVP scope shipped (v1.0.0)
 Offline `.bdat` import · Drift/SQLite storage · reader (red-letter, highlights, verse selection/action panel) · compare (split + full-screen) · search · bookmarks · notes · translation manager · settings (theme, font size, verse numbers, default translation) · reading-position persistence · "calm study" design system. **Not in MVP:** sync, mobile-specific UI (paused per DECISIONS.md).
+
+---
+
+## 🔨 Work Log – 2026-07-22
+
+### Reader: center-anchored scroll — no more upward-load teleport
+- `reader_page_desktop.dart`: the continuous reader was a `ListView` that, on prepending a previous chapter, jumped the scroll offset forward by the inserted content's measured height to hold the viewport (`_maybeLoadPrev` captured `maxScrollExtent` before/after and `jumpTo`'d the delta in a post-frame callback). This produced a visible flicker/teleport on slower prepends.
+- Replaced with a **center-anchored `CustomScrollView`**: two `SliverList`s split at `_centerIndex` (chapters before the anchor in a reverse/upward sliver, the anchor + everything after in a forward sliver keyed by `_centerKey`). Prepending inserts at `_chapters[0]` and increments `_centerIndex`, so the above-anchor content grows into negative scroll space **away from a fixed viewport** — the jumpTo compensation is gone entirely.
+- `_maybeLoadPrev` trigger rewritten: fires only while `userScrollDirection == forward` (scrolling up) and `extentBefore <= 1500` (pre-load buffer mirroring `_maybeLoadNext`'s forward lookahead). The direction gate replaces the old `pixels <= 100` check and prevents the near-top-while-scrolling-down re-prepend.
+- Chapter blocks now built lazily by `SliverChildBuilderDelegate` (off-screen chapters aren't built) via a local `buildChapterSlice`. Prev spinner moved to a top `SliverToBoxAdapter` (negative space); next spinner / nav buttons stay in a trailing adapter. Added `import 'package:flutter/rendering.dart' show ScrollDirection;`.

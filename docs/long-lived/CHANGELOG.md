@@ -2,6 +2,10 @@
 
 Newest at the top. Dates are work-log dates from PROGRESS REPORT.md.
 
+## 2026-07-22
+
+- **Reader continuous scroll — center-anchored, no teleport**: the desktop reader's `ListView` was replaced with a center-anchored `CustomScrollView`. Loading a previous chapter used to `jumpTo` the scroll offset forward by the inserted content's height to keep the viewport steady (a post-frame flicker on slower prepends); now above-anchor chapters render in a reverse sliver that grows into negative scroll space away from a fixed anchor, so upward loading never shifts what's on screen. Prev-load now triggers on scroll-up direction + a 1500px top buffer (was a bare `pixels <= 100` check).
+
 ## 2026-07-21 — v1.0.0 (MVP complete)
 
 - **Version bumped to 1.0.0** (`AppInfo.version`). Owner declared the MVP complete: offline reading, import, search, bookmarks, notes, highlights, compare, settings, theming. Sync (Supabase) intentionally NOT included — remains disabled skeleton, post-MVP.

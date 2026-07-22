@@ -188,7 +188,7 @@ class _NotesPageState extends ConsumerState<NotesPageDesktop> {
                     child: ListView.separated(
                       padding: const EdgeInsets.all(24),
                       itemCount: _notes!.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 12),
+                      separatorBuilder: (_, _) => const SizedBox(height: 12),
                       itemBuilder: (context, index) {
                         final n = _notes![index];
                         return _NoteCard(
