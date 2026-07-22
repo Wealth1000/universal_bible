@@ -17,6 +17,7 @@ import 'package:universal_bible/features/bible/domain/book_info.dart';
 import 'package:universal_bible/features/bible/domain/chapter_navigation.dart';
 import 'package:universal_bible/features/bible/domain/continuous_reading_provider.dart';
 import 'package:universal_bible/features/bible/domain/reader_provider.dart';
+import 'package:universal_bible/features/bible/presentation/widgets/chapter_grid.dart';
 import 'package:universal_bible/features/bible/presentation/widgets/compare_column.dart';
 import 'package:universal_bible/features/bible/presentation/widgets/translation_grid.dart';
 import 'package:universal_bible/features/bible/presentation/widgets/verse_action_panel.dart';
@@ -57,6 +58,7 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
   String _selectedText = '';
   // Anchor for the translation pill's grid dropdown.
   final GlobalKey _translationPillKey = GlobalKey();
+  final GlobalKey _chapterButtonKey = GlobalKey();
 
   // Cache the verses future so unrelated setState calls (selection FAB,
   // verse taps) don't recreate it — recreating it makes FutureBuilder
@@ -391,10 +393,19 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
                   : 1;
               _goTo(ChapterRef(newBook.number, firstChapter));
             },
-            onChapterChanged: (newChapter) {
-              ref.read(currentChapterProvider.notifier).set(newChapter);
-              _persistPosition(currentBook, newChapter);
+            onChapterTap: () {
+              showChapterGridDropdown(
+                context,
+                chapterKeys: chapterKeys,
+                currentChapter: currentChapter,
+                anchorKey: _chapterButtonKey,
+                onSelected: (newChapter) {
+                  ref.read(currentChapterProvider.notifier).set(newChapter);
+                  _persistPosition(currentBook, newChapter);
+                },
+              );
             },
+            chapterButtonKey: _chapterButtonKey,
             onTranslationTap: () {
               showTranslationGridDropdown(
                 context,
@@ -724,7 +735,8 @@ class _TopBar extends StatelessWidget {
   final bool continuousReading;
   final ValueChanged<bool> onContinuousReadingChanged;
   final Function(BookInfo) onBookChanged;
-  final Function(int) onChapterChanged;
+  final VoidCallback onChapterTap;
+  final GlobalKey? chapterButtonKey;
   final VoidCallback onTranslationTap;
   final GlobalKey? translationPillKey;
 
@@ -739,7 +751,8 @@ class _TopBar extends StatelessWidget {
     required this.continuousReading,
     required this.onContinuousReadingChanged,
     required this.onBookChanged,
-    required this.onChapterChanged,
+    required this.onChapterTap,
+    this.chapterButtonKey,
     required this.onTranslationTap,
     this.translationPillKey,
   });
@@ -792,31 +805,41 @@ class _TopBar extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: AppSpacing.s16),
-              DropdownButton<int>(
-                // Show whichever chapter is currently visible on screen.
-                // Fall back to the navigation chapter if the visible one is
-                // not in the current book's list (e.g. cross-book scroll).
-                value: chapterKeys.contains(chapterToShow) ? chapterToShow : chapter,
-                items: chapterKeys.map((ch) {
-                  return DropdownMenuItem<int>(
-                    value: ch,
-                    child: Text('Chapter $ch'),
-                  );
-                }).toList(),
-                onChanged: (newChapter) {
-                  if (newChapter != null) {
-                    onChapterChanged(newChapter);
-                  }
-                },
-                underline: const SizedBox.shrink(),
-                style: AppTypography.uiLabel.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: colorScheme.onSurface,
-                ),
-                icon: Icon(
-                  Icons.expand_more,
-                  size: 18,
-                  color: colorScheme.onSurfaceVariant,
+              // Chapter picker: opens the number grid dropdown (§2 pattern).
+              // The label keeps the "Chapter N" wording; the grid shows
+              // whichever chapter is currently visible on screen, falling
+              // back to the navigation chapter across book boundaries.
+              Semantics(
+                button: true,
+                label: 'Chapter ${chapterKeys.contains(chapterToShow) ? chapterToShow : chapter}. Tap to switch.',
+                child: InkWell(
+                  key: chapterButtonKey,
+                  onTap: onChapterTap,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.s8,
+                      vertical: AppSpacing.s8,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Chapter ${chapterKeys.contains(chapterToShow) ? chapterToShow : chapter}',
+                          style: AppTypography.uiLabel.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: colorScheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.s4),
+                        Icon(
+                          Icons.expand_more,
+                          size: 18,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ],

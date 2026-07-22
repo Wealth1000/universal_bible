@@ -57,7 +57,7 @@ UNTIL FURTHER NOTICE, MOBILE specific data shall not be developed. this goes acc
 ## Known debt (decided to defer, not forgotten)
 
 - ~~Duplicate theme provider files~~ — fixed 2026-07-21 (UI overhaul Batch 1); only `core/themes/theme_provider.dart` remains.
-- Private `_translationRepoProvider` copy-pasted in 5 files — hoist into a shared provider.
+- ~~Private `_translationRepoProvider` copy-pasted in 5 files~~ — fixed: a single shared `core/providers/translation_repo_provider.dart` (`translationRepoProvider`) is now the only definition; no private copies remain.
 - `features/settings/presention/` directory is a typo ("presention") — rename when convenient.
 - `reader_mobile` route lacks a leading slash in `app_router.dart`.
 - ~~Welcome page hardcodes "Version 2.4.0"~~ — fixed 2026-07-21; version now comes from `AppInfo`.
