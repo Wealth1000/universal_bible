@@ -2,6 +2,11 @@
 
 Newest at the top. Dates are work-log dates from PROGRESS REPORT.md.
 
+## 2026-07-23
+
+- **Rhapsody scripture references reveal the passage**: tapping an inline reference or a reading-plan chip in the devotional now shows the actual verse text (resolved offline from the local DB against the active translation, red-letter preserved) instead of a "open the Bible tab" message, plus an **Open in reader** action that jumps to the passage. Unresolvable references (e.g. unknown abbreviations) degrade to a status-specific message. New `scripture_resolver.dart` (reference parser + `scripturePassageProvider`); reuses `cleanBookName` for book matching and `normalizeResolvedScriptureText`/`buildScriptureSpans` for rendering.
+- **Reader chapter picker → number grid**: the top-bar chapter dropdown was replaced with a tappable "Chapter N" button opening a grid of chapter numbers (mirrors the translation-grid dropdown), anchored below the button, active chapter highlighted. New `chapter_grid.dart`.
+
 ## 2026-07-22
 
 - **Reader continuous scroll — center-anchored, no teleport**: the desktop reader's `ListView` was replaced with a center-anchored `CustomScrollView`. Loading a previous chapter used to `jumpTo` the scroll offset forward by the inserted content's height to keep the viewport steady (a post-frame flicker on slower prepends); now above-anchor chapters render in a reverse sliver that grows into negative scroll space away from a fixed anchor, so upward loading never shifts what's on screen. Prev-load now triggers on scroll-up direction + a 1500px top buffer (was a bare `pixels <= 100` check).

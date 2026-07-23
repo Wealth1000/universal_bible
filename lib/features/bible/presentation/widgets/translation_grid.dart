@@ -42,25 +42,35 @@ class TranslationGrid extends ConsumerWidget {
         final theme = Theme.of(context);
 
         return Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(8),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final t in translations)
-                    _TranslationCell(
+              SizedBox(
+                width: 470,
+                child: GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 4,
+                    childAspectRatio: 2.0,
+                    crossAxisSpacing: 6,
+                    mainAxisSpacing: 6,
+                  ),
+                  itemCount: translations.length,
+                  itemBuilder: (context, index) {
+                    final t = translations[index];
+                    return _TranslationCell(
                       translation: t,
                       isActive: t.id == activeId,
                       onTap: () {
                         _activateTranslation(ref, t.id);
                         onClose();
                       },
-                    ),
-                ],
+                    );
+                  },
+                ),
               ),
               if (translations.length <= 1) ...[
                 const SizedBox(height: 8),
@@ -108,7 +118,8 @@ class _TranslationCell extends StatelessWidget {
     return Semantics(
       button: true,
       selected: isActive,
-      label: '${translation.name} (${translation.id})'
+      label:
+          '${translation.name} (${translation.id})'
           '${isActive ? ', active translation' : ''}',
       child: Material(
         color: isActive ? colorScheme.primaryContainer : colorScheme.surface,
@@ -123,27 +134,26 @@ class _TranslationCell extends StatelessWidget {
           onTap: onTap,
           borderRadius: BorderRadius.circular(12),
           child: Container(
-            constraints: const BoxConstraints(minWidth: 88, maxWidth: 160),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   translation.id,
-                  style: theme.textTheme.titleMedium?.copyWith(
+                  style: theme.textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w700,
                     color: isActive
                         ? colorScheme.onPrimaryContainer
                         : colorScheme.onSurface,
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 1),
                 Text(
                   translation.name,
-                  maxLines: 2,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(
+                  style: theme.textTheme.labelSmall?.copyWith(
                     color: isActive
                         ? colorScheme.onPrimaryContainer
                         : colorScheme.onSurfaceVariant,
@@ -167,8 +177,7 @@ void showTranslationGridDropdown(BuildContext context, {GlobalKey? anchorKey}) {
 
   // Anchor rect in overlay coordinates; falls back to top-right region.
   Rect anchorRect;
-  final anchorBox =
-      anchorKey?.currentContext?.findRenderObject() as RenderBox?;
+  final anchorBox = anchorKey?.currentContext?.findRenderObject() as RenderBox?;
   if (anchorBox != null && anchorBox.attached) {
     anchorRect = Rect.fromPoints(
       anchorBox.localToGlobal(Offset.zero, ancestor: overlay),
@@ -190,7 +199,7 @@ void showTranslationGridDropdown(BuildContext context, {GlobalKey? anchorKey}) {
         children: [
           Positioned(
             top: anchorRect.bottom + 4,
-            right: (overlay.size.width - anchorRect.right).clamp(
+            right: (overlay.size.width - anchorRect.right - 20).clamp(
               8.0,
               overlay.size.width - 8.0,
             ),
@@ -200,7 +209,7 @@ void showTranslationGridDropdown(BuildContext context, {GlobalKey? anchorKey}) {
               color: theme.colorScheme.surface,
               clipBehavior: Clip.antiAlias,
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 420),
+                constraints: const BoxConstraints(maxWidth: 480),
                 child: Consumer(
                   builder: (context, ref, _) => TranslationGrid(
                     onClose: () => Navigator.of(dialogContext).pop(),
