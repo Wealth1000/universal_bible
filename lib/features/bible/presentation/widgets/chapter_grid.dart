@@ -1,15 +1,14 @@
 import 'package:flutter/material.dart';
 
-/// Adaptive grid of chapter numbers for the reader top bar. Mirrors the
-/// translation grid pattern (§2): a Wrap of content-sized number cells, the
-/// active chapter highlighted. Tapping a cell selects it and closes the
-/// surface via [onClose]. Numbers only — the "Chapter N" wording lives on
-/// the anchor button, not in the grid.
+/// Adaptive grid of chapter numbers for the reader top bar.
+/// Keeps exactly 8 columns. Cell size is controlled by [maxGridWidth] –
+/// set a smaller value to get smaller squares.
 class ChapterGrid extends StatelessWidget {
   final List<int> chapterKeys;
   final int currentChapter;
   final ValueChanged<int> onSelected;
   final VoidCallback onClose;
+  final double? maxGridWidth; // ← narrower width → smaller squares
 
   const ChapterGrid({
     super.key,
@@ -17,27 +16,58 @@ class ChapterGrid extends StatelessWidget {
     required this.currentChapter,
     required this.onSelected,
     required this.onClose,
+    this.maxGridWidth = 332,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(12),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          for (final ch in chapterKeys)
-            _ChapterCell(
-              chapter: ch,
-              isActive: ch == currentChapter,
-              onTap: () {
-                onSelected(ch);
-                onClose();
-              },
+    const crossAxisCount = 8;
+    const mainAxisSpacing = 4.0;
+    const crossAxisSpacing = 4.0;
+    const padding = EdgeInsets.all(8.0);
+
+    final totalItems = chapterKeys.length;
+    final rowCount = (totalItems / crossAxisCount).ceil();
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Use the specified max width, otherwise fill the parent.
+        final usedWidth = maxGridWidth ?? constraints.maxWidth;
+        final availableWidth = usedWidth - padding.horizontal;
+        final tileWidth = (availableWidth -
+                (crossAxisCount - 1) * crossAxisSpacing) /
+            crossAxisCount;
+        // Square cells → height = width
+        final tileHeight = tileWidth;
+        final gridHeight = padding.vertical +
+            rowCount * tileHeight +
+            (rowCount - 1) * mainAxisSpacing;
+
+        return ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: usedWidth),
+          child: SizedBox(
+            height: gridHeight,
+            child: GridView.count(
+              crossAxisCount: crossAxisCount,
+              childAspectRatio: 1.0,
+              padding: padding,
+              mainAxisSpacing: mainAxisSpacing,
+              crossAxisSpacing: crossAxisSpacing,
+              children: chapterKeys.map((ch) {
+                final isActive = ch == currentChapter;
+                return _ChapterCell(
+                  chapter: ch,
+                  isActive: isActive,
+                  onTap: () {
+                    onSelected(ch);
+                    onClose();
+                  },
+                );
+              }).toList(),
             ),
-        ],
-      ),
+          ),
+        );
+      },
     );
   }
 }
@@ -65,7 +95,7 @@ class _ChapterCell extends StatelessWidget {
       child: Material(
         color: isActive ? colorScheme.primaryContainer : colorScheme.surface,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(8),
           side: BorderSide(
             color: isActive ? colorScheme.primary : colorScheme.outlineVariant,
             width: isActive ? 2 : 1,
@@ -73,18 +103,18 @@ class _ChapterCell extends StatelessWidget {
         ),
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(8),
           child: Container(
-            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
             alignment: Alignment.center,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
             child: Text(
               '$chapter',
-              style: theme.textTheme.titleMedium?.copyWith(
+              style: theme.textTheme.titleSmall?.copyWith(
                 fontWeight: FontWeight.w700,
                 color: isActive
                     ? colorScheme.onPrimaryContainer
                     : colorScheme.onSurface,
+                fontSize: 14,
               ),
             ),
           ),
@@ -95,8 +125,8 @@ class _ChapterCell extends StatelessWidget {
 }
 
 /// Desktop: shows [ChapterGrid] as a dropdown box anchored below the chapter
-/// button (below-left, growing leftwards), mirroring the translation grid
-/// dropdown. Dismissed on tap-outside.
+/// button. The grid is forced to a narrower width (`maxGridWidth = 400`) to
+/// make the squares visibly smaller while keeping 8 columns.
 void showChapterGridDropdown(
   BuildContext context, {
   required List<int> chapterKeys,
@@ -107,7 +137,6 @@ void showChapterGridDropdown(
   final overlay =
       Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
 
-  // Anchor rect in overlay coordinates; falls back to a top-left region.
   Rect anchorRect;
   final anchorBox = anchorKey?.currentContext?.findRenderObject() as RenderBox?;
   if (anchorBox != null && anchorBox.attached) {
@@ -138,14 +167,18 @@ void showChapterGridDropdown(
               color: theme.colorScheme.surface,
               clipBehavior: Clip.antiAlias,
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 320, maxHeight: 420),
-                child: SingleChildScrollView(
-                  child: ChapterGrid(
-                    chapterKeys: chapterKeys,
-                    currentChapter: currentChapter,
-                    onSelected: onSelected,
-                    onClose: () => Navigator.of(dialogContext).pop(),
-                  ),
+                // Outer box still has a maxWidth to keep the popup tidy
+                constraints: const BoxConstraints(
+                  maxWidth: 540,
+                  maxHeight: 400,
+                ),
+                // Pass the narrower width directly to the grid
+                child: ChapterGrid(
+                  chapterKeys: chapterKeys,
+                  currentChapter: currentChapter,
+                  onSelected: onSelected,
+                  onClose: () => Navigator.of(dialogContext).pop(),
+                  maxGridWidth: 400,   // ← this makes the squares smaller
                 ),
               ),
             ),
