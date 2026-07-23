@@ -19,6 +19,18 @@ class MyApp extends ConsumerWidget {
       themeMode: themeMode,
       routerConfig: appRouter,
       debugShowCheckedModeBanner: false,
+      builder: (context, child) {
+        // Lock text scale to prevent DPI-based scaling on high-DPI Windows displays
+        final mediaQueryData = MediaQuery.of(context);
+        final constrainedTextScale = mediaQueryData.textScaler.clamp(
+          minScaleFactor: 0.9,
+          maxScaleFactor: 1.0,
+        );
+        return MediaQuery(
+          data: mediaQueryData.copyWith(textScaler: constrainedTextScale),
+          child: child!,
+        );
+      },
     );
   }
 }
