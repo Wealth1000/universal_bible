@@ -20,14 +20,31 @@ class MyApp extends ConsumerWidget {
       routerConfig: appRouter,
       debugShowCheckedModeBanner: false,
       builder: (context, child) {
-        // Lock text scale to prevent DPI-based scaling on high-DPI Windows displays
-        final mediaQueryData = MediaQuery.of(context);
-        final constrainedTextScale = mediaQueryData.textScaler.clamp(
-          minScaleFactor: 0.9,
-          maxScaleFactor: 1.0,
-        );
+        // ---- FIX: Lock the ENTIRE UI scale (not just text) to 100 % ----
+        final mediaQuery = MediaQuery.of(context);
+        const double targetDevicePixelRatio = 1.0; // 1.0 = no system scaling
+
+        // If the system already reports 1.0, only lock the text scaler
+        if ((mediaQuery.devicePixelRatio - targetDevicePixelRatio).abs() < 0.001) {
+          return MediaQuery(
+            data: mediaQuery.copyWith(
+              textScaler: TextScaler.noScaling,
+            ),
+            child: child!,
+          );
+        }
+
+        // Otherwise, scale the logical size so the physical pixel grid stays correct
+        final scale = mediaQuery.devicePixelRatio / targetDevicePixelRatio;
         return MediaQuery(
-          data: mediaQueryData.copyWith(textScaler: constrainedTextScale),
+          data: mediaQuery.copyWith(
+            devicePixelRatio: targetDevicePixelRatio,
+            size: Size(
+              mediaQuery.size.width * scale,
+              mediaQuery.size.height * scale,
+            ),
+            textScaler: TextScaler.noScaling,
+          ),
           child: child!,
         );
       },
