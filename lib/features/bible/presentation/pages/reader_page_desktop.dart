@@ -18,6 +18,7 @@ import 'package:universal_bible/features/bible/domain/chapter_navigation.dart';
 import 'package:universal_bible/features/bible/domain/continuous_reading_provider.dart';
 import 'package:universal_bible/features/bible/domain/reader_provider.dart';
 import 'package:universal_bible/features/bible/presentation/widgets/chapter_grid.dart';
+import 'package:universal_bible/features/bible/presentation/widgets/book_picker.dart';
 import 'package:universal_bible/features/bible/presentation/widgets/compare_column.dart';
 import 'package:universal_bible/features/bible/presentation/widgets/translation_grid.dart';
 import 'package:universal_bible/features/bible/presentation/widgets/verse_action_panel.dart';
@@ -59,6 +60,7 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
   // Anchor for the translation pill's grid dropdown.
   final GlobalKey _translationPillKey = GlobalKey();
   final GlobalKey _chapterButtonKey = GlobalKey();
+  final GlobalKey _bookButtonKey = GlobalKey();
 
   // Cache the verses future so unrelated setState calls (selection FAB,
   // verse taps) don't recreate it — recreating it makes FutureBuilder
@@ -115,7 +117,8 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
     final defaultTransId = translations.any((t) => t.id == defaultId)
         ? defaultId
         : null;
-    final transId = currentTransId ??
+    final transId =
+        currentTransId ??
         persistedTransId ??
         defaultTransId ??
         translations.first.id;
@@ -153,15 +156,13 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
       final number = entry.value as int;
       // Format at display time so name fixes apply without re-importing
       // the translation (bookDisplayNamesJson may be stale or missing).
-      final displayName =
-          formatBookName(name, preserveOriginal: preserveOriginal);
+      final displayName = formatBookName(
+        name,
+        preserveOriginal: preserveOriginal,
+      );
       final counts = bookChapters[number] ?? {};
       books.add(
-        BookInfo(
-          number: number,
-          name: displayName,
-          chapterCounts: counts,
-        ),
+        BookInfo(number: number, name: displayName, chapterCounts: counts),
       );
     }
 
@@ -213,8 +214,7 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
         if (!bookExists) {
           ref.read(currentBookProvider.notifier).set(effectiveBookNum);
         }
-        final bookInfo =
-            books.firstWhere((b) => b.number == effectiveBookNum);
+        final bookInfo = books.firstWhere((b) => b.number == effectiveBookNum);
         final chapterNow = ref.read(currentChapterProvider);
         if (chapterNow != null &&
             !bookInfo.chapterCounts.containsKey(chapterNow)) {
@@ -238,7 +238,9 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
   void _persistPosition(int book, int chapter) {
     final translationId = ref.read(currentTranslationProvider);
     if (translationId == null) return;
-    ref.read(readingPositionProvider.notifier).save(
+    ref
+        .read(readingPositionProvider.notifier)
+        .save(
           ReadingPosition(
             translationId: translationId,
             book: book,
@@ -373,114 +375,129 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
         ref.watch(compareOpenProvider) && selectedVerses.isNotEmpty;
 
     final readerColumn = Column(
-        children: [
-          // Top Bar
-          _TopBar(
-            bookName: bookName,
-            chapter: currentChapter,        // for dropdown value
-            displayChapter: visibleChapter, // for the label
-            books: _books!,
-            chapterKeys: chapterKeys,
-            translationId: translationId,
-            translationName: _translationName,
-            continuousReading: continuousReading,
-            onContinuousReadingChanged: (value) {
-              ref.read(continuousReadingProvider.notifier).set(value);
-            },
-            onBookChanged: (newBook) {
-              final firstChapter = newBook.chapterCounts.keys.isNotEmpty
-                  ? (newBook.chapterCounts.keys.toList()..sort()).first
-                  : 1;
-              _goTo(ChapterRef(newBook.number, firstChapter));
-            },
-            onChapterTap: () {
-              showChapterGridDropdown(
-                context,
-                chapterKeys: chapterKeys,
-                currentChapter: currentChapter,
-                anchorKey: _chapterButtonKey,
-                onSelected: (newChapter) {
-                  ref.read(currentChapterProvider.notifier).set(newChapter);
-                  _persistPosition(currentBook, newChapter);
+      children: [
+        // Top Bar
+        _TopBar(
+          bookName: bookName,
+          chapter: currentChapter, // for dropdown value
+          displayChapter: visibleChapter, // for the label
+          books: _books!,
+          chapterKeys: chapterKeys,
+          translationId: translationId,
+          translationName: _translationName,
+          continuousReading: continuousReading,
+          onContinuousReadingChanged: (value) {
+            ref.read(continuousReadingProvider.notifier).set(value);
+          },
+          onBookChanged: (newBook) {
+            final firstChapter = newBook.chapterCounts.keys.isNotEmpty
+                ? (newBook.chapterCounts.keys.toList()..sort()).first
+                : 1;
+            _goTo(ChapterRef(newBook.number, firstChapter));
+          },
+          onChapterTap: () {
+            showChapterGridDropdown(
+              context,
+              chapterKeys: chapterKeys,
+              currentChapter: currentChapter,
+              anchorKey: _chapterButtonKey,
+              onSelected: (newChapter) {
+                ref.read(currentChapterProvider.notifier).set(newChapter);
+                _persistPosition(currentBook, newChapter);
+              },
+            );
+          },
+          chapterButtonKey: _chapterButtonKey,
+          onBookTap: () {
+            showBookPickerDropdown(
+              context,
+              books: _books!,
+              currentBookName: bookName,
+              anchorKey: _bookButtonKey,
+              onSelected: (newBook) {
+                final firstChapter = newBook.chapterCounts.keys.isNotEmpty
+                    ? (newBook.chapterCounts.keys.toList()..sort()).first
+                    : 1;
+                _goTo(ChapterRef(newBook.number, firstChapter));
+              },
+            );
+          },
+          bookButtonKey: _bookButtonKey,
+          onTranslationTap: () {
+            showTranslationGridDropdown(
+              context,
+              anchorKey: _translationPillKey,
+            );
+          },
+          translationPillKey: _translationPillKey,
+        ),
+        // Scripture Content
+        Expanded(
+          child: FutureBuilder<List<Verse>>(
+            future: versesFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (snapshot.hasError) {
+                return Center(
+                  child: Text(
+                    'Error loading verses: ${snapshot.error}',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                );
+              }
+              final verses = snapshot.data ?? [];
+              if (verses.isEmpty) {
+                return const Center(
+                  child: Text('No verses found for this chapter.'),
+                );
+              }
+              return _ReaderContent(
+                // Reset loaded chapters and scroll when the user
+                // navigates or toggles continuous mode.
+                key: ValueKey(
+                  '$translationId|$currentBook|$currentChapter|$continuousReading',
+                ),
+                initialChapter: _LoadedChapter(
+                  book: currentBook,
+                  chapter: currentChapter,
+                  bookName: bookName,
+                  verses: verses,
+                ),
+                continuousReading: continuousReading,
+                prevLabel: prevRef == null
+                    ? null
+                    : '${bookNameFor(_books!, prevRef)} ${prevRef.chapter}',
+                nextLabel: nextRef == null
+                    ? null
+                    : '${bookNameFor(_books!, nextRef)} ${nextRef.chapter}',
+                onPrev: prevRef == null ? null : () => _goTo(prevRef),
+                onNext: nextRef == null ? null : () => _goTo(nextRef),
+                loadChapterAfter: _loadChapterAfter,
+                loadChapterBefore: _loadChapterBefore,
+                // Verse taps (not mouse text-selection) drive the
+                // action overlay: text is the joined selected verses,
+                // empty when the last verse is deselected.
+                onVersesSelected: (text) {
+                  final visible = text.isNotEmpty;
+                  if (visible == _selectionFabVisible &&
+                      text == _selectedText) {
+                    return;
+                  }
+                  setState(() {
+                    if (visible) {
+                      _selectedText = text;
+                    }
+                    _selectionFabVisible = visible;
+                  });
                 },
               );
             },
-            chapterButtonKey: _chapterButtonKey,
-            onTranslationTap: () {
-              showTranslationGridDropdown(
-                context,
-                anchorKey: _translationPillKey,
-              );
-            },
-            translationPillKey: _translationPillKey,
           ),
-          // Scripture Content
-          Expanded(
-            child: FutureBuilder<List<Verse>>(
-              future: versesFuture,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return Center(
-                    child: Text(
-                      'Error loading verses: ${snapshot.error}',
-                      style: theme.textTheme.bodyMedium,
-                    ),
-                  );
-                }
-                final verses = snapshot.data ?? [];
-                if (verses.isEmpty) {
-                  return const Center(
-                    child: Text('No verses found for this chapter.'),
-                  );
-                }
-                return _ReaderContent(
-                  // Reset loaded chapters and scroll when the user
-                  // navigates or toggles continuous mode.
-                  key: ValueKey(
-                    '$translationId|$currentBook|$currentChapter|$continuousReading',
-                  ),
-                  initialChapter: _LoadedChapter(
-                    book: currentBook,
-                    chapter: currentChapter,
-                    bookName: bookName,
-                    verses: verses,
-                  ),
-                  continuousReading: continuousReading,
-                  prevLabel: prevRef == null
-                      ? null
-                      : '${bookNameFor(_books!, prevRef)} ${prevRef.chapter}',
-                  nextLabel: nextRef == null
-                      ? null
-                      : '${bookNameFor(_books!, nextRef)} ${nextRef.chapter}',
-                  onPrev: prevRef == null ? null : () => _goTo(prevRef),
-                  onNext: nextRef == null ? null : () => _goTo(nextRef),
-                  loadChapterAfter: _loadChapterAfter,
-                  loadChapterBefore: _loadChapterBefore,
-                  // Verse taps (not mouse text-selection) drive the
-                  // action overlay: text is the joined selected verses,
-                  // empty when the last verse is deselected.
-                  onVersesSelected: (text) {
-                    final visible = text.isNotEmpty;
-                    if (visible == _selectionFabVisible &&
-                        text == _selectedText) {
-                      return;
-                    }
-                    setState(() {
-                      if (visible) {
-                        _selectedText = text;
-                      }
-                      _selectionFabVisible = visible;
-                    });
-                  },
-                );
-              },
-            ),
-          ),
-        ],
-      );
+        ),
+      ],
+    );
 
     return Scaffold(
       backgroundColor: surfaceColor,
@@ -493,10 +510,7 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
         children: [
           Expanded(flex: 6, child: readerColumn),
           if (compareVisible) ...[
-            Container(
-              width: 1,
-              color: colorScheme.outlineVariant,
-            ),
+            Container(width: 1, color: colorScheme.outlineVariant),
             Expanded(
               flex: 4,
               child: ColoredBox(
@@ -726,8 +740,8 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
 // --- Top Bar Widget ---
 class _TopBar extends StatelessWidget {
   final String bookName;
-  final int chapter;            // value for chapter dropdown
-  final int? displayChapter;     // displayed in the label (can follow scroll)
+  final int chapter; // value for chapter dropdown
+  final int? displayChapter; // displayed in the label (can follow scroll)
   final List<BookInfo> books;
   final List<int> chapterKeys;
   final String? translationId;
@@ -737,6 +751,8 @@ class _TopBar extends StatelessWidget {
   final Function(BookInfo) onBookChanged;
   final VoidCallback onChapterTap;
   final GlobalKey? chapterButtonKey;
+  final VoidCallback onBookTap;
+  final GlobalKey? bookButtonKey;
   final VoidCallback onTranslationTap;
   final GlobalKey? translationPillKey;
 
@@ -753,6 +769,8 @@ class _TopBar extends StatelessWidget {
     required this.onBookChanged,
     required this.onChapterTap,
     this.chapterButtonKey,
+    required this.onBookTap,
+    this.bookButtonKey,
     required this.onTranslationTap,
     this.translationPillKey,
   });
@@ -777,31 +795,38 @@ class _TopBar extends StatelessWidget {
         children: [
           Row(
             children: [
-              DropdownButton<BookInfo>(
-                value: books.firstWhere(
-                  (b) => b.name == bookName,
-                  orElse: () => books.first,
-                ),
-                items: books.map((book) {
-                  return DropdownMenuItem<BookInfo>(
-                    value: book,
-                    child: Text(book.name),
-                  );
-                }).toList(),
-                onChanged: (newBook) {
-                  if (newBook != null) {
-                    onBookChanged(newBook);
-                  }
-                },
-                underline: const SizedBox.shrink(),
-                style: AppTypography.uiLabel.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: colorScheme.onSurface,
-                ),
-                icon: Icon(
-                  Icons.expand_more,
-                  size: 18,
-                  color: colorScheme.onSurfaceVariant,
+              // Book picker: opens the book picker dropdown.
+              Semantics(
+                button: true,
+                label: 'Book $bookName. Tap to switch.',
+                child: InkWell(
+                  key: bookButtonKey,
+                  onTap: onBookTap,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.s8,
+                      vertical: AppSpacing.s8,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          bookName,
+                          style: AppTypography.uiLabel.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: colorScheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.s4),
+                        Icon(
+                          Icons.expand_more,
+                          size: 18,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(width: AppSpacing.s16),
@@ -811,7 +836,8 @@ class _TopBar extends StatelessWidget {
               // back to the navigation chapter across book boundaries.
               Semantics(
                 button: true,
-                label: 'Chapter ${chapterKeys.contains(chapterToShow) ? chapterToShow : chapter}. Tap to switch.',
+                label:
+                    'Chapter ${chapterKeys.contains(chapterToShow) ? chapterToShow : chapter}. Tap to switch.',
                 child: InkWell(
                   key: chapterButtonKey,
                   onTap: onChapterTap,
@@ -884,7 +910,10 @@ class _TopBar extends StatelessWidget {
               ),
               const SizedBox(width: AppSpacing.s8),
               PopupMenuButton<String>(
-                icon: Icon(Icons.more_vert, color: colorScheme.onSurfaceVariant),
+                icon: Icon(
+                  Icons.more_vert,
+                  color: colorScheme.onSurfaceVariant,
+                ),
                 tooltip: 'Reader options',
                 onSelected: (value) {
                   if (value == 'continuous') {
@@ -915,8 +944,10 @@ class _ReaderContent extends ConsumerStatefulWidget {
   final String? nextLabel;
   final VoidCallback? onPrev;
   final VoidCallback? onNext;
-  final Future<_LoadedChapter?> Function(int book, int chapter) loadChapterAfter;
-  final Future<_LoadedChapter?> Function(int book, int chapter) loadChapterBefore;
+  final Future<_LoadedChapter?> Function(int book, int chapter)
+  loadChapterAfter;
+  final Future<_LoadedChapter?> Function(int book, int chapter)
+  loadChapterBefore;
   final Function(String) onVersesSelected;
 
   const _ReaderContent({
@@ -989,8 +1020,11 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
     final db = ref.read(databaseProvider);
     final loaded = <VerseRef, Color>{};
     for (final ch in List<_LoadedChapter>.of(_chapters)) {
-      final rows =
-          await db.getHighlightsForChapter(translationId, ch.book, ch.chapter);
+      final rows = await db.getHighlightsForChapter(
+        translationId,
+        ch.book,
+        ch.chapter,
+      );
       for (final h in rows) {
         final color = highlightColorFromHex(h.color);
         if (color != null) {
@@ -1012,7 +1046,9 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
     // Set the visible chapter after the first frame to avoid modifying provider during build.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        ref.read(visibleChapterProvider.notifier).set(widget.initialChapter.chapter);
+        ref
+            .read(visibleChapterProvider.notifier)
+            .set(widget.initialChapter.chapter);
         // Content recreation (navigation, translation switch) starts a
         // fresh selection — mirrors the pre-provider local-state behavior.
         ref.read(selectedVersesProvider.notifier).clear();
@@ -1060,8 +1096,9 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
       final headerBox = headerCtx.findRenderObject() as RenderBox?;
       if (headerBox == null) continue;
 
-      final topInViewport =
-          listBox.globalToLocal(headerBox.localToGlobal(Offset.zero)).dy;
+      final topInViewport = listBox
+          .globalToLocal(headerBox.localToGlobal(Offset.zero))
+          .dy;
 
       if (topInViewport <= halfViewport) {
         ref.read(visibleChapterProvider.notifier).set(_chapters[i].chapter);
@@ -1070,7 +1107,9 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
         // never goes through navigation. Debounced inside the notifier.
         final translationId = ref.read(currentTranslationProvider);
         if (translationId != null) {
-          ref.read(readingPositionProvider.notifier).save(
+          ref
+              .read(readingPositionProvider.notifier)
+              .save(
                 ReadingPosition(
                   translationId: translationId,
                   book: _chapters[i].book,
@@ -1307,9 +1346,7 @@ class _ChapterHeader extends StatelessWidget {
           Text(
             chapter.bookName,
             textAlign: TextAlign.center,
-            style: AppTypography.display.copyWith(
-              color: colorScheme.onSurface,
-            ),
+            style: AppTypography.display.copyWith(color: colorScheme.onSurface),
           ),
           const SizedBox(height: AppSpacing.s8),
           Text(
@@ -1422,9 +1459,9 @@ class _VerseTile extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     final brightness = theme.brightness;
 
-    final baseStyle = AppTypography.scripture(fontSize).copyWith(
-      color: colorScheme.onSurface,
-    );
+    final baseStyle = AppTypography.scripture(
+      fontSize,
+    ).copyWith(color: colorScheme.onSurface);
 
     // Strip HTML, decode entities, and keep words-of-Christ segments
     // (red-letter) via sentinel markers.
@@ -1453,14 +1490,13 @@ class _VerseTile extends StatelessWidget {
         decoration: BoxDecoration(
           color: backgroundColor,
           border: selected
-              ? Border(
-                  left: BorderSide(color: colorScheme.primary, width: 2),
-                )
+              ? Border(left: BorderSide(color: colorScheme.primary, width: 2))
               : null,
           // No radius while the left accent border is present — Flutter
           // forbids borderRadius with a non-uniform Border.
-          borderRadius:
-              selected ? null : BorderRadius.circular(AppRadius.small),
+          borderRadius: selected
+              ? null
+              : BorderRadius.circular(AppRadius.small),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1471,17 +1507,14 @@ class _VerseTile extends StatelessWidget {
                 child: Text(
                   '$verseNumber',
                   style: AppTypography.scriptureRef.copyWith(
-                    color:
-                        colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
                   ),
                   textAlign: TextAlign.right,
                 ),
               ),
               const SizedBox(width: AppSpacing.s16),
             ],
-            Expanded(
-              child: Text.rich(TextSpan(children: spans)),
-            ),
+            Expanded(child: Text.rich(TextSpan(children: spans))),
           ],
         ),
       ),

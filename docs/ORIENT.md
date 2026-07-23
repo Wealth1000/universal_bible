@@ -84,8 +84,43 @@ from owner requests.
   folder pattern: `features/<f>/presentation/widgets/`.
 - Desktop overlays = anchored dialogs; mobile pickers = bottom sheets;
   active item highlighted.
-- Known debt list lives at the bottom of DECISIONS.md (dup theme
-  providers, `_translationRepoProvider` ×5, "presention" typo dir, etc.).
-  Don't re-discover it; don't fix unprompted.
 - Branch `develop`; commit style `feat:/fix:/refactor:/docs:`; commit only
   when asked.
+
+## Active Enhancement: Book Picker Dropdown (2026-07-23)
+
+**Reference:** `chapter_grid.dart` — polished Material design with:
+- `colorScheme.primaryContainer` for active state, `surface` for inactive
+- Rounded corners (8px), conditional border (2px primary vs 1px outlineVariant)
+- `InkWell` for tap feedback, `Semantics` for accessibility
+- `colorScheme.onPrimaryContainer` / `onSurface` for text
+
+**Current state (lines 780-807 of `reader_page_desktop.dart`):**
+- Basic `DropdownButton<BookInfo>` with default Flutter styling
+- Minimal customization: shrunk underline, basic icon
+- No visual polish, no accessibility labels
+
+**Design direction per UI_UX.md principles:**
+- **Calm & Predictable** — matching ChapterGrid's refined aesthetic
+- **Fast** — instant feedback, no modal windows
+- **Bible-focused** — subtle, reverent styling that doesn't distract from Scripture
+
+**Proposed approach:**
+1. Replace basic `DropdownButton` with custom dropdown anchored below book button
+2. Use `Overlay` or anchored `Dialog` (like `showChapterGridDropdown` does)
+3. Book list rendered in a scrollable list with:
+   - Active book highlighted with `colorScheme.primaryContainer`
+   - Rounded container with conditional border
+   - InkWell tap feedback
+   - Semantic label for screen readers
+4. Match chapter grid's visual language: 8px radius, 1-2px borders, proper colorScheme
+5. Keyboard navigation support (arrow keys, Enter to select, Escape to close)
+6. Search/filter capability if book list is long (66+ books in Bible)
+
+**Implementation notes:**
+- Reuse `showChapterGridDropdown` pattern as template
+- Books are already loaded in `books` list — pass to new widget
+- Consider grouping by testament (Old/New) for UX if list feels long
+- Desktop: mouse hover states; Mobile: touch-friendly targets
+
+**Status: ✅ Complete (2026-07-23)**

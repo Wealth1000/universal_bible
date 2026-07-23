@@ -444,3 +444,21 @@ Offline `.bdat` import · Drift/SQLite storage · reader (red-letter, highlights
 ### Rhapsody: scripture references now reveal the actual passage
 - New resolver `features/rhapsody/application/scripture_resolver.dart`: `parseScriptureReference` (handles `Book Ch[:V[-V]]`, leading ordinals like "2 Timothy", trailing translation codes like "NIV"), `normalizeBookKey` (reuses `cleanBookName` so a reference and a raw `bookMapJson` title canonicalise to the same key), and `scripturePassageProvider` (`FutureProvider.family`) which resolves against the active translation (cascade: current → default → reading-position → first installed), decodes the translation's book map, queries `getVersesForChapter`, and narrows to the verse range. Returns a `ResolvedPassage` with a `PassageStatus` (ok / unparseable / bookNotFound / noVerses / noTranslation).
 - `scripture_reference_reveal.dart`: the reveal sheet (previously a static "open the Bible tab" message) is now a `ConsumerWidget` that renders the resolved verses via `normalizeResolvedScriptureText` + `buildScriptureSpans` (red-letter preserved), shows the translation name, and offers **Open in reader** (sets translation/book/chapter providers → `context.go('/reader')`). Unresolvable references fall back to a status-specific message — no regression for abbreviations the dictionary doesn't know (e.g. "Gen").
+
+
+## 🔨 Work Log – 2026-07-23
+### Reader: chapter picker dropdown modified slightly
+- Modified chapter picker dropdown: shifted left by 20px, removed scrollbar, reduced width to 220px, centered scroll on current book when opened.
+
+## 🔨 Work Log – 2026-07-23
+### Reader: book picker dropdown added
+- New widget `features/bible/presentation/widgets/book_picker.dart` (`BookPicker` + `showBookPickerDropdown`) — replaces the basic Flutter `DropdownButton<BookInfo>` with a polished dropdown matching the chapter grid aesthetic.
+- `BookPicker` is a `StatefulWidget` with `ScrollController` that centers on the current book on open.
+- Styled cells with `primaryContainer` background for active book, 8px rounded corners, `InkWell` tap feedback, semantics for accessibility.
+- Integrated into `_TopBar` with a tappable button (matching chapter picker styling) and `GlobalKey` for positioning.
+
+## 🔨 Work Log – 2026-07-23
+### Reader: translation grid dropdown resized
+- `translation_grid.dart`: changed from `Wrap` to fixed 4-column `GridView.builder`, increased `maxWidth` to 480, adjusted cell sizes and aspect ratio to fit longer translation names on one line.
+- Shifted dropdown right by 130px for better positioning.
+- `reader_page_desktop.dart`: the top-bar `DropdownButton<int>` for chapters was replaced with a tappable "Chapter N" button that opens a **grid of chapter numbers** — mirrors the §2 translation-grid dropdown pattern. New widget `features/bible/presentation/widgets/chapter_grid.dart` (`ChapterGrid` + `showChapterGridDropdown`, anchored below-left of the button via a `GlobalKey`, dismiss-on-tap-outside, active chapter highlighted, smaller min tap targets, semantics labels). `_TopBar.onChapterChanged` became `onChapterTap`; chapter selection still routes through `currentChapterProvider` + `_persistPosition`.
