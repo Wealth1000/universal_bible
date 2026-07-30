@@ -4,9 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:universal_bible/core/design/app_tokens.dart';
 import 'package:universal_bible/features/rhapsody/application/devotional_body_parser.dart';
 import 'package:universal_bible/features/rhapsody/application/rhapsody_providers.dart';
+import 'package:universal_bible/features/rhapsody/application/rhapsody_zoom_provider.dart';
 import 'package:universal_bible/features/rhapsody/domain/devotional.dart';
 import 'package:universal_bible/features/rhapsody/presentation/rhapsody_layout.dart';
 import 'package:universal_bible/features/rhapsody/presentation/widgets/scripture_reference_reveal.dart';
+import 'package:universal_bible/features/rhapsody/presentation/widgets/zoom_control.dart';
 
 /// Today's Rhapsody devotional, read from Supabase. Replaces the former
 /// placeholder. Keeps the original screen contract: [embedded] renders just
@@ -25,47 +27,49 @@ class RhapsodyScreen extends ConsumerWidget {
 
     final body = devotionalAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (_, _) => _ErrorState(
-        onRetry: () => ref.invalidate(todayDevotionalProvider),
-      ),
+      error: (_, _) =>
+          _ErrorState(onRetry: () => ref.invalidate(todayDevotionalProvider)),
       data: (devotional) => devotional == null
           ? const _EmptyState()
           : _DevotionalReader(devotional: devotional, wide: wide),
     );
 
-    if (embedded) return body;
+    // The floating zoom control is part of the reading experience and should
+    // be available whether the screen is embedded in the desktop shell or
+    // rendered as its own scaffold. Stack it over the body either way.
+    if (embedded) return RhapsodyZoomStack(child: body);
 
     if (wide) {
       return Scaffold(
         backgroundColor: theme.scaffoldBackgroundColor,
-        body: body,
+        body: RhapsodyZoomStack(child: body),
       );
     }
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(title: const Text('Rhapsody')),
-      body: body,
+      body: RhapsodyZoomStack(child: body),
     );
   }
 }
 
 /// The reading column: date, title, illustration slot, body, confession, and
 /// the three scripture reading-plan sections. Width is constrained and centred
-/// so it stays readable on tablet/desktop.
-class _DevotionalReader extends StatelessWidget {
+/// so it stays readable on tablet/desktop. All text sizes are scaled by the
+/// Rhapsody zoom multiplier (see [rhapsodyZoomProvider]).
+class _DevotionalReader extends ConsumerWidget {
   const _DevotionalReader({required this.devotional, required this.wide});
 
   final Devotional devotional;
   final bool wide;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final tablet = isTabletLayout(context);
-    final maxWidth = !wide
-        ? double.infinity
-        : (tablet ? 720.0 : 820.0);
+    final zoom = ref.watch(rhapsodyZoomProvider);
+    final maxWidth = !wide ? double.infinity : (tablet ? 720.0 : 820.0);
     final hPad = wide ? (tablet ? 24.0 : 28.0) : 16.0;
 
     return SingleChildScrollView(
@@ -81,6 +85,8 @@ class _DevotionalReader extends StatelessWidget {
                 style: theme.textTheme.labelMedium?.copyWith(
                   letterSpacing: 2,
                   fontWeight: FontWeight.w700,
+                  fontSize:
+                      (theme.textTheme.labelMedium?.fontSize ?? 12) * zoom,
                   color: theme.colorScheme.secondary,
                 ),
               ),
@@ -89,7 +95,7 @@ class _DevotionalReader extends StatelessWidget {
                 devotional.title,
                 style: TextStyle(
                   fontFamily: AppFonts.scripture,
-                  fontSize: wide ? 30 : 25,
+                  fontSize: (wide ? 30.0 : 25.0) * zoom,
                   height: 1.12,
                   fontWeight: FontWeight.w800,
                   color: theme.colorScheme.onSurface,
@@ -98,14 +104,17 @@ class _DevotionalReader extends StatelessWidget {
               const SizedBox(height: 18),
               _IllustrationSlot(imageUrl: devotional.imageUrl),
               const SizedBox(height: 22),
-              _DevotionalBody(paragraphs: devotional.bodyParagraphs),
+              _DevotionalBody(
+                paragraphs: devotional.bodyParagraphs,
+                zoom: zoom,
+              ),
               if (devotional.confession.trim().isNotEmpty) ...[
                 const SizedBox(height: 24),
-                _ConfessionCard(text: devotional.confession),
+                _ConfessionCard(text: devotional.confession, zoom: zoom),
               ],
               if (devotional.hasReadingPlan) ...[
                 const SizedBox(height: 28),
-                _ReadingPlan(devotional: devotional),
+                _ReadingPlan(devotional: devotional, zoom: zoom),
               ],
             ],
           ),
@@ -180,9 +189,10 @@ class _IllustrationSlot extends StatelessWidget {
 /// as tappable rubric spans (see [showScriptureReveal]). Stateful so the tap
 /// recognizers can be disposed.
 class _DevotionalBody extends StatefulWidget {
-  const _DevotionalBody({required this.paragraphs});
+  const _DevotionalBody({required this.paragraphs, required this.zoom});
 
   final List<DevotionalParagraph> paragraphs;
+  final double zoom;
 
   @override
   State<_DevotionalBody> createState() => _DevotionalBodyState();
@@ -205,7 +215,7 @@ class _DevotionalBodyState extends State<_DevotionalBody> {
     final readingColor = theme.colorScheme.onSurface.withValues(alpha: 0.92);
     final baseStyle = TextStyle(
       fontFamily: AppFonts.scripture,
-      fontSize: 16.5,
+      fontSize: 16.5 * widget.zoom,
       height: 1.62,
       color: readingColor,
     );
@@ -264,9 +274,10 @@ class _DevotionalBodyState extends State<_DevotionalBody> {
 }
 
 class _ConfessionCard extends StatelessWidget {
-  const _ConfessionCard({required this.text});
+  const _ConfessionCard({required this.text, required this.zoom});
 
   final String text;
+  final double zoom;
 
   @override
   Widget build(BuildContext context) {
@@ -288,6 +299,7 @@ class _ConfessionCard extends StatelessWidget {
               letterSpacing: 1.6,
               color: theme.colorScheme.secondary,
               fontWeight: FontWeight.w800,
+              fontSize: (theme.textTheme.labelLarge?.fontSize ?? 14) * zoom,
             ),
           ),
           const SizedBox(height: 10),
@@ -295,7 +307,7 @@ class _ConfessionCard extends StatelessWidget {
             text,
             style: TextStyle(
               fontFamily: AppFonts.scripture,
-              fontSize: 15.5,
+              fontSize: 15.5 * zoom,
               height: 1.55,
               fontStyle: FontStyle.italic,
               color: theme.colorScheme.onSurface.withValues(alpha: 0.9),
@@ -309,23 +321,30 @@ class _ConfessionCard extends StatelessWidget {
 
 /// The three scripture reading lists, each a labelled block of tappable chips.
 class _ReadingPlan extends StatelessWidget {
-  const _ReadingPlan({required this.devotional});
+  const _ReadingPlan({required this.devotional, required this.zoom});
 
   final Devotional devotional;
+  final double zoom;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _ReadingSection(title: 'Further Study', refs: devotional.furtherStudy),
+        _ReadingSection(
+          title: 'Further Study',
+          refs: devotional.furtherStudy,
+          zoom: zoom,
+        ),
         _ReadingSection(
           title: '1-Year Bible Reading Plan',
           refs: devotional.oneYearBible,
+          zoom: zoom,
         ),
         _ReadingSection(
           title: '2-Year Bible Reading Plan',
           refs: devotional.twoYearBible,
+          zoom: zoom,
         ),
       ],
     );
@@ -333,10 +352,15 @@ class _ReadingPlan extends StatelessWidget {
 }
 
 class _ReadingSection extends StatelessWidget {
-  const _ReadingSection({required this.title, required this.refs});
+  const _ReadingSection({
+    required this.title,
+    required this.refs,
+    required this.zoom,
+  });
 
   final String title;
   final List<String> refs;
+  final double zoom;
 
   @override
   Widget build(BuildContext context) {
@@ -353,6 +377,7 @@ class _ReadingSection extends StatelessWidget {
               letterSpacing: 1.4,
               color: theme.colorScheme.secondary,
               fontWeight: FontWeight.w800,
+              fontSize: (theme.textTheme.labelLarge?.fontSize ?? 14) * zoom,
             ),
           ),
           const SizedBox(height: 12),
