@@ -4,12 +4,16 @@ import 'package:go_router/go_router.dart';
 import 'package:universal_bible/core/design/app_tokens.dart';
 import 'package:universal_bible/core/utils/scripture_format.dart';
 import 'package:universal_bible/features/bible/domain/reader_provider.dart';
+import 'package:universal_bible/features/rhapsody/application/rhapsody_zoom_provider.dart';
 import 'package:universal_bible/features/rhapsody/application/scripture_resolver.dart';
 
 /// Rubricated pill for a single scripture reference in a reading-plan list.
 /// Tapping reveals the passage (see [showScriptureReveal]). The garnet rubric
 /// is the app's reserved scripture colour, so these read as "doorways to the
 /// Word" — consistent with the inline references in the devotional body.
+///
+/// Text size is scaled by the Rhapsody zoom multiplier so the chip stays
+/// in step with the surrounding reading text.
 class ScriptureRefChip extends ConsumerWidget {
   const ScriptureRefChip({super.key, required this.reference});
 
@@ -18,6 +22,7 @@ class ScriptureRefChip extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final rubric = AppColors.wordsOfChrist(Theme.of(context).brightness);
+    final zoom = ref.watch(rhapsodyZoomProvider);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -35,7 +40,7 @@ class ScriptureRefChip extends ConsumerWidget {
             children: [
               Icon(
                 Icons.menu_book_rounded,
-                size: 14,
+                size: 14 * zoom,
                 color: rubric.withValues(alpha: 0.9),
               ),
               const SizedBox(width: 7),
@@ -43,7 +48,7 @@ class ScriptureRefChip extends ConsumerWidget {
                 reference,
                 style: TextStyle(
                   fontFamily: AppFonts.scripture,
-                  fontSize: 14,
+                  fontSize: 14 * zoom,
                   height: 1.1,
                   fontWeight: FontWeight.w600,
                   color: rubric,
@@ -122,7 +127,8 @@ class _ScriptureRevealSheet extends ConsumerWidget {
                   child: Center(child: CircularProgressIndicator()),
                 ),
                 error: (_, _) => _FallbackMessage(
-                  message: "Couldn't load this passage. "
+                  message:
+                      "Couldn't load this passage. "
                       'Open the Bible tab to read it.',
                 ),
                 data: (passage) => _PassageBody(passage: passage),

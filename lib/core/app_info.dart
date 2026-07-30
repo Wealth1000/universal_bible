@@ -7,5 +7,5 @@ class AppInfo {
   AppInfo._();
 
   static const String appName = 'Universal Bible';
-  static const String version = '1.0.8';
+  static const String version = '1.0.9';
 }
