@@ -979,6 +979,14 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
   int _centerIndex = 0;
   late final List<_LoadedChapter> _chapters = [widget.initialChapter];
   final List<GlobalKey> _chapterHeaderKeys = [GlobalKey()];
+  // One key per rendered verse so keyboard stepping can measure where verses
+  // sit. Keyed by VerseRef, not by list index: continuous mode prepends
+  // chapters, which would shift indices out from under the keys.
+  final Map<VerseRef, GlobalKey> _verseKeys = {};
+  // Scroll offset a keyboard step is animating toward, so a second press
+  // lands on the verse after the one in flight instead of re-aiming at it.
+  // Null when no keyboard step is running.
+  double? _keyStepTarget;
   bool _loadingNext = false;
   bool _reachedEnd = false;
   bool _loadingPrev = false;
@@ -1161,14 +1169,23 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
     }
   }
 
-  Future<void> _maybeLoadPrev() async {
+  /// Prepends the previous chapter once the top of the loaded content is
+  /// within reach (continuous mode).
+  ///
+  /// [ignoreScrollDirection] is for callers that already know the reader is
+  /// heading up (keyboard stepping): a programmatic scroll reports no user
+  /// scroll direction, so the guard below would never let them through.
+  Future<void> _maybeLoadPrev({bool ignoreScrollDirection = false}) async {
     if (_loadingPrev || _reachedStart || !mounted) return;
     if (!_scrollController.hasClients) return;
     final position = _scrollController.position;
     // Only prepend while the user is actively scrolling UP toward the top.
     // Without this, the same near-top position while scrolling down would
     // prepend the previous chapter — the old teleport bug.
-    if (position.userScrollDirection != ScrollDirection.forward) return;
+    if (!ignoreScrollDirection &&
+        position.userScrollDirection != ScrollDirection.forward) {
+      return;
+    }
     // ...and only when the top of the loaded content is within reach — a
     // pre-load buffer mirroring _maybeLoadNext's forward lookahead.
     if (position.extentBefore > 1500) return;
@@ -1202,6 +1219,121 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
     _loadingPrev = false;
   }
 
+  // --- Keyboard verse stepping (Up / Down) ---
+
+  /// Where a stepped-to verse lands: this far below the top of the reading
+  /// area. Whatever sits on that line counts as the current verse.
+  static const double _verseAnchorInset = AppSpacing.s12;
+
+  /// Moves the reader exactly one verse down ([direction] == 1) or up (-1).
+  ///
+  /// Verses differ wildly in height, so rather than scroll a fixed number of
+  /// pixels this snaps the anchor line onto the next/previous verse (or
+  /// chapter title) boundary. Boundaries are measured in scroll-offset space —
+  /// `pixels + offsetFromViewportTop` is invariant while scrolling — so
+  /// measuring in the middle of an in-flight step is safe.
+  void _stepByVerse(int direction) {
+    if (!_scrollController.hasClients) return;
+    final listCtx = _scrollKey.currentContext;
+    if (listCtx == null) return;
+    final listBox = listCtx.findRenderObject() as RenderBox?;
+    if (listBox == null) return;
+
+    final position = _scrollController.position;
+    // Step from where an in-flight step is headed, not from the offset it
+    // happens to be passing through.
+    final reference = _keyStepTarget ?? position.pixels;
+    final anchor = reference + _verseAnchorInset;
+    // Boundaries within a hair of the anchor are the one we're already on;
+    // ignoring them keeps a press from re-aiming at the current verse.
+    const tolerance = 2.0;
+
+    double? target;
+    void considerBoundary(GlobalKey key) {
+      // Null context = not currently built (an off-screen chapter).
+      final ctx = key.currentContext;
+      if (ctx == null) return;
+      final box = ctx.findRenderObject() as RenderBox?;
+      if (box == null) return;
+      final top =
+          position.pixels +
+          listBox.globalToLocal(box.localToGlobal(Offset.zero)).dy;
+      final closer = direction > 0
+          ? top > anchor + tolerance && (target == null || top < target!)
+          : top < anchor - tolerance && (target == null || top > target!);
+      if (closer) target = top;
+    }
+
+    // Chapter titles are boundaries too, so crossing into the next chapter
+    // stops at its heading instead of scrolling straight past it.
+    for (final key in _chapterHeaderKeys) {
+      considerBoundary(key);
+    }
+    for (final key in _verseKeys.values) {
+      considerBoundary(key);
+    }
+
+    // With no boundary that way we're in the padding past the last built
+    // verse (or before the first); a bounded nudge keeps the very top and
+    // bottom of the loaded content reachable without a wild jump.
+    final destination = target != null
+        ? target! - _verseAnchorInset
+        : reference + direction * position.viewportDimension * 0.5;
+    final clamped = destination.clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    if ((clamped - reference).abs() < 0.5) return;
+
+    _keyStepTarget = clamped;
+    _scrollController
+        .animateTo(
+          clamped,
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOutCubic,
+        )
+        .whenComplete(() {
+          // A newer step may already own the field.
+          if (_keyStepTarget == clamped) _keyStepTarget = null;
+        });
+  }
+
+  /// Up/Down step the reader one verse; every other key falls through.
+  ///
+  /// This node sits ABOVE the [SelectionArea] (see [build]) so it stays in the
+  /// key-event chain once a click hands focus to the selectable region, and so
+  /// it runs before Flutter's default arrow-key scrolling.
+  KeyEventResult _handleReaderKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    final isDown = event.logicalKey == LogicalKeyboardKey.arrowDown;
+    final isUp = event.logicalKey == LogicalKeyboardKey.arrowUp;
+    if (!isDown && !isUp) return KeyEventResult.ignored;
+    // Modified combos stay with their owners — shift+arrow still extends a
+    // text selection inside the SelectionArea.
+    final keyboard = HardwareKeyboard.instance;
+    if (keyboard.isShiftPressed ||
+        keyboard.isControlPressed ||
+        keyboard.isAltPressed ||
+        keyboard.isMetaPressed) {
+      return KeyEventResult.ignored;
+    }
+    // Pace a held key to one verse per step animation. Auto-repeat fires
+    // several times faster than that and would fly down the chapter.
+    if (event is KeyRepeatEvent && _keyStepTarget != null) {
+      return KeyEventResult.handled;
+    }
+    if (isUp && widget.continuousReading) {
+      // Keyboard scrolling is programmatic, so it reports no user scroll
+      // direction and the listener that prepends the previous chapter can
+      // never fire for it — ask directly (it self-guards on distance).
+      _maybeLoadPrev(ignoreScrollDirection: true);
+    }
+    _stepByVerse(isDown ? 1 : -1);
+    return KeyEventResult.handled;
+  }
+
   @override
   Widget build(BuildContext context) {
     final selectedVerses = ref.watch(selectedVersesProvider);
@@ -1225,6 +1357,8 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
           ...ch.verses.map((verse) {
             final vRef = VerseRef(ch.book, ch.chapter, verse.verse);
             return _VerseTile(
+              // Lets keyboard stepping measure this verse's position.
+              key: _verseKeys.putIfAbsent(vRef, () => GlobalKey()),
               verseNumber: verse.verse,
               text: verse.verseText,
               selected: selectedVerses.contains(vRef),
@@ -1249,60 +1383,28 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
     // chapter: chapters appended below and prepended above both grow away
     // from a fixed viewport, so upward loading (see _maybeLoadPrev) never
     // shifts what's on screen.
-    return SelectionArea(
-      child: CustomScrollView(
-        key: _scrollKey,
-        controller: _scrollController,
-        center: _centerKey,
-        slivers: [
-          // Above the anchor: previous-chapter loading indicator, else a
-          // small top inset. Lives in negative scroll space.
-          SliverToBoxAdapter(
-            child: (widget.continuousReading && _loadingPrev && !_reachedStart)
-                ? const Padding(
-                    padding: EdgeInsets.symmetric(vertical: AppSpacing.s16),
-                    child: Center(
-                      child: SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    ),
-                  )
-                : const SizedBox(height: AppSpacing.s24),
-          ),
-          // Chapters BEFORE the anchor, nearest-first (this sliver is laid
-          // out upward, so child 0 sits directly above the anchor).
-          SliverPadding(
-            padding: horizontalPadding,
-            sliver: SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, i) => buildChapterSlice(_centerIndex - 1 - i),
-                childCount: _centerIndex,
-              ),
-            ),
-          ),
-          // The anchor chapter and everything after it.
-          SliverPadding(
-            key: _centerKey,
-            padding: horizontalPadding,
-            sliver: SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, i) => buildChapterSlice(_centerIndex + i),
-                childCount: _chapters.length - _centerIndex,
-              ),
-            ),
-          ),
-          // Below the last chapter: next-chapter spinner (continuous) or the
-          // prev/next navigation buttons (paged mode / end of book).
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: horizontalPadding,
-              child: Column(
-                children: [
-                  const SizedBox(height: AppSpacing.s48),
-                  if (widget.continuousReading && !_reachedEnd)
-                    const Padding(
+    //
+    // The Focus wraps SelectionArea (not the other way round) so Up/Down
+    // reach _handleReaderKey even after a click moves focus into the
+    // selectable region — see _handleReaderKey. autofocus means the keys work
+    // as soon as the reader opens, without a click first; skipTraversal keeps
+    // Tab on the real controls, since this node is only here to catch keys.
+    return Focus(
+      autofocus: true,
+      skipTraversal: true,
+      onKeyEvent: _handleReaderKey,
+      child: SelectionArea(
+        child: CustomScrollView(
+          key: _scrollKey,
+          controller: _scrollController,
+          center: _centerKey,
+          slivers: [
+            // Above the anchor: previous-chapter loading indicator, else a
+            // small top inset. Lives in negative scroll space.
+            SliverToBoxAdapter(
+              child:
+                  (widget.continuousReading && _loadingPrev && !_reachedStart)
+                  ? const Padding(
                       padding: EdgeInsets.symmetric(vertical: AppSpacing.s16),
                       child: Center(
                         child: SizedBox(
@@ -1312,19 +1414,63 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
                         ),
                       ),
                     )
-                  else
-                    _ChapterNavButtons(
-                      prevLabel: widget.prevLabel,
-                      nextLabel: widget.nextLabel,
-                      onPrev: widget.onPrev,
-                      onNext: widget.onNext,
-                    ),
-                  const SizedBox(height: AppSpacing.s64),
-                ],
+                  : const SizedBox(height: AppSpacing.s24),
+            ),
+            // Chapters BEFORE the anchor, nearest-first (this sliver is laid
+            // out upward, so child 0 sits directly above the anchor).
+            SliverPadding(
+              padding: horizontalPadding,
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, i) => buildChapterSlice(_centerIndex - 1 - i),
+                  childCount: _centerIndex,
+                ),
               ),
             ),
-          ),
-        ],
+            // The anchor chapter and everything after it.
+            SliverPadding(
+              key: _centerKey,
+              padding: horizontalPadding,
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, i) => buildChapterSlice(_centerIndex + i),
+                  childCount: _chapters.length - _centerIndex,
+                ),
+              ),
+            ),
+            // Below the last chapter: next-chapter spinner (continuous) or the
+            // prev/next navigation buttons (paged mode / end of book).
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: horizontalPadding,
+                child: Column(
+                  children: [
+                    const SizedBox(height: AppSpacing.s48),
+                    if (widget.continuousReading && !_reachedEnd)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: AppSpacing.s16),
+                        child: Center(
+                          child: SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                      )
+                    else
+                      _ChapterNavButtons(
+                        prevLabel: widget.prevLabel,
+                        nextLabel: widget.nextLabel,
+                        onPrev: widget.onPrev,
+                        onNext: widget.onNext,
+                      ),
+                    const SizedBox(height: AppSpacing.s64),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1444,6 +1590,7 @@ class _VerseTile extends StatelessWidget {
   final VoidCallback onTap;
 
   const _VerseTile({
+    super.key,
     required this.verseNumber,
     required this.text,
     required this.selected,
