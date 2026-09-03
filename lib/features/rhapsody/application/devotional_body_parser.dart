@@ -60,13 +60,14 @@ List<DevotionalParagraph> parseDevotionalBody(String html) {
   String? currentHref;
 
   void flushParagraph() {
-    // Drop leading/trailing empty runs but keep meaningful ones.
+    // Drop leading/trailing empty runs but keep meaningful ones. Whitespace
+    // (or <br>-only) paragraphs count as empty — DevotionalParagraph.isEmpty
+    // checks trimmed text.
     final trimmed = current
         .where((s) => s.text.isNotEmpty)
         .toList(growable: false);
-    if (trimmed.isNotEmpty) {
-      paragraphs.add(DevotionalParagraph(trimmed));
-    }
+    final paragraph = DevotionalParagraph(trimmed);
+    if (!paragraph.isEmpty) paragraphs.add(paragraph);
     current = <DevotionalSpan>[];
   }
 
