@@ -6,9 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:universal_bible/core/services/storage_service.dart';
 import 'package:universal_bible/core/utils/book_name_utils.dart';
 import '../../../../database/app_database.dart';
-import '../models/bible_bdat.dart'; // we'll define this
-import '../../../../services/download_service.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import '../models/bible_bdat.dart';
 
 /// Plain-data result of parsing a .bdat file. Built on a background isolate
 /// (see [_parseBdatFile]) so it must only contain sendable types.
@@ -144,6 +142,10 @@ class TranslationRepository {
 
   /// Import a .bdat file from a local file path. Parsing runs on a
   /// background isolate so the UI stays responsive during bulk imports.
+  ///
+  /// Re-importing an existing translation replaces its verses (delete
+  /// before insert), and the whole write runs in one transaction so a
+  /// failure can't leave a half-populated translation.
   Future<void> importFromFile(String filePath) async {
     final parsed = await compute(_parseBdatFile, filePath);
 
@@ -164,8 +166,6 @@ class TranslationRepository {
         ),
     ];
 
-    await db.insertVerses(companions);
-
     final companion = TranslationsCompanion(
       name: Value(parsed.name),
       languageCode: Value(parsed.language),
@@ -180,26 +180,60 @@ class TranslationRepository {
       filePath: Value(destPath),
     );
 
-    // Check if translation already exists
-    final existing = await db.getTranslation(parsed.id);
-    if (existing != null) {
-      // Update existing
-      await (db.update(
-        db.translations,
-      )..where((t) => t.id.equals(parsed.id))).write(companion);
-    } else {
-      // Insert new
-      await db
-          .into(db.translations)
-          .insert(companion.copyWith(id: Value(parsed.id)));
-    }
+    await db.transaction(() async {
+      // Replace any existing verses so a re-import doesn't duplicate them.
+      await (db.delete(
+        db.verses,
+      )..where((v) => v.translationId.equals(parsed.id))).go();
+      await db.insertVerses(companions);
+
+      // Check if translation already exists
+      final existing = await db.getTranslation(parsed.id);
+      if (existing != null) {
+        // Update existing
+        await (db.update(
+          db.translations,
+        )..where((t) => t.id.equals(parsed.id))).write(companion);
+      } else {
+        // Insert new
+        await db
+            .into(db.translations)
+            .insert(companion.copyWith(id: Value(parsed.id)));
+      }
+    });
   }
 
-  final downloadService = TranslationDownloadService(Supabase.instance.client);
+  /// Deletes a translation's metadata, all its verses, and the copied
+  /// .bdat file from storage. Study data (notes/highlights/bookmarks) for
+  /// the translation is removed too.
+  Future<void> deleteTranslation(String id) async {
+    await db.transaction(() async {
+      await (db.delete(
+        db.verses,
+      )..where((v) => v.translationId.equals(id))).go();
+      await (db.delete(
+        db.notes,
+      )..where((n) => n.translationId.equals(id))).go();
+      await (db.delete(
+        db.highlights,
+      )..where((h) => h.translationId.equals(id))).go();
+      await (db.delete(
+        db.bookmarks,
+      )..where((b) => b.translationId.equals(id))).go();
+      await (db.delete(
+        db.translations,
+      )..where((t) => t.id.equals(id))).go();
+    });
 
-  Future<void> downloadAndImport(String translationId) async {
-    final fileName = '$translationId.bdat'; // or use the actual file name
-    final localPath = await downloadService.download(fileName);
-    await importFromFile(localPath);
+    // Remove the copied .bdat file; best-effort — a missing file
+    // shouldn't fail the delete.
+    final row = await db.getTranslation(id);
+    final filePath = row?.filePath;
+    if (filePath != null) {
+      try {
+        final file = File(filePath);
+        if (await file.exists()) await file.delete();
+      } catch (_) {}
+    }
   }
 }

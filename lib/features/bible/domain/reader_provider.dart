@@ -40,20 +40,6 @@ final visibleLocationProvider =
       VisibleLocationNotifier.new,
     );
 
-// Chapter-only visible tracker retained for the (inactive) mobile reader,
-// which tracks chapter within a single book. The desktop reader uses
-// [visibleLocationProvider] so its header can follow cross-book scroll.
-class VisibleChapterNotifier extends Notifier<int?> {
-  @override
-  int? build() => null;
-
-  void set(int? chapter) => state = chapter;
-}
-
-final visibleChapterProvider = NotifierProvider<VisibleChapterNotifier, int?>(
-  VisibleChapterNotifier.new,
-);
-
 final currentTranslationProvider =
     NotifierProvider<CurrentTranslationNotifier, String?>(
       CurrentTranslationNotifier.new,

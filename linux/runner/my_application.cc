@@ -53,6 +53,22 @@ static void my_application_activate(GApplication* application) {
   }
 
   gtk_window_set_default_size(window, 1280, 720);
+  // Set the window/taskbar icon (Linux desktop has no default like
+    // Android/Windows do).
+    gchar *exe_path = g_file_read_link("/proc/self/exe", nullptr);
+    gchar *exe_dir = g_path_get_dirname(exe_path);
+    gchar *icon_path = g_build_filename(
+        exe_dir, "data", "flutter_assets", "assets", "images", "app_logo.png", nullptr);
+  
+    GError *icon_error = nullptr;
+    if (!gtk_window_set_icon_from_file(GTK_WINDOW(window), icon_path, &icon_error)) {
+      g_warning("Failed to set window icon: %s", icon_error->message);
+      g_error_free(icon_error);
+    }
+  
+    g_free(icon_path);
+    g_free(exe_dir);
+    g_free(exe_path);
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(
