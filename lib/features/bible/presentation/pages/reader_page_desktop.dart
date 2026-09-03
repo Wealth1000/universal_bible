@@ -317,8 +317,10 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
     final chapter = ref.watch(currentChapterProvider);
     final continuousReading = ref.watch(continuousReadingProvider);
 
-    // Read the visible chapter for the AppBar label (from scroll-follow).
-    final visibleChapter = ref.watch(visibleChapterProvider) ?? chapter;
+    // Scroll-follow: the (book, chapter) currently centred in the viewport.
+    // Drives the top bar labels and the picker dropdowns so they track
+    // continuous-mode drift across book boundaries (Genesis 50 -> Exodus 1).
+    final visibleLoc = ref.watch(visibleLocationProvider);
 
     if (_isLoading) {
       return Scaffold(
@@ -356,11 +358,32 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
       orElse: () => _books!.first,
     );
     final bookName = currentBookInfo.name;
-    final chapterCounts = currentBookInfo.chapterCounts;
-    final chapterKeys = chapterCounts.keys.toList()..sort();
     final currentChapter =
-        chapter ?? (chapterKeys.isNotEmpty ? chapterKeys.first : 1);
+        chapter ??
+        (currentBookInfo.chapterCounts.isNotEmpty
+            ? currentBookInfo.chapterCounts.keys.first
+            : 1);
     final currentBook = currentBookInfo.number;
+
+    // Display book/chapter follow the scroll; the navigation book/chapter
+    // drive content loading. They differ while continuous reading drifts
+    // across a book boundary — the header and both picker dropdowns show
+    // where the user actually IS, not where they last navigated.
+    final displayBookInfo =
+        visibleLoc == null
+            ? currentBookInfo
+            : _books!.firstWhere(
+                (b) => b.number == visibleLoc.book,
+                orElse: () => currentBookInfo,
+              );
+    final displayBookName = displayBookInfo.name;
+    final displayChapterKeys = displayBookInfo.chapterCounts.keys.toList()
+      ..sort();
+    final displayChapter =
+        visibleLoc != null &&
+            displayChapterKeys.contains(visibleLoc.chapter)
+        ? visibleLoc.chapter
+        : currentChapter;
 
     final prevRef = prevChapterRef(_books!, currentBook, currentChapter);
     final nextRef = nextChapterRef(_books!, currentBook, currentChapter);
@@ -378,33 +401,27 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
       children: [
         // Top Bar
         _TopBar(
-          bookName: bookName,
-          chapter: currentChapter, // for dropdown value
-          displayChapter: visibleChapter, // for the label
-          books: _books!,
-          chapterKeys: chapterKeys,
+          // Display values follow the scroll (see visibleLoc above) so the
+          // header tracks continuous-mode drift across book boundaries.
+          bookName: displayBookName,
+          chapter: displayChapter,
+          chapterKeys: displayChapterKeys,
           translationId: translationId,
           translationName: _translationName,
           continuousReading: continuousReading,
           onContinuousReadingChanged: (value) {
             ref.read(continuousReadingProvider.notifier).set(value);
           },
-          onBookChanged: (newBook) {
-            final firstChapter = newBook.chapterCounts.keys.isNotEmpty
-                ? (newBook.chapterCounts.keys.toList()..sort()).first
-                : 1;
-            _goTo(ChapterRef(newBook.number, firstChapter));
-          },
           onChapterTap: () {
+            // The grid shows the visible book's chapters; picking one
+            // navigates within that book.
             showChapterGridDropdown(
               context,
-              chapterKeys: chapterKeys,
-              currentChapter: currentChapter,
+              chapterKeys: displayChapterKeys,
+              currentChapter: displayChapter,
               anchorKey: _chapterButtonKey,
-              onSelected: (newChapter) {
-                ref.read(currentChapterProvider.notifier).set(newChapter);
-                _persistPosition(currentBook, newChapter);
-              },
+              onSelected: (newChapter) =>
+                  _goTo(ChapterRef(displayBookInfo.number, newChapter)),
             );
           },
           chapterButtonKey: _chapterButtonKey,
@@ -412,13 +429,17 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
             showBookPickerDropdown(
               context,
               books: _books!,
-              currentBookName: bookName,
+              currentBookName: displayBookName,
               anchorKey: _bookButtonKey,
               onSelected: (newBook) {
-                final firstChapter = newBook.chapterCounts.keys.isNotEmpty
-                    ? (newBook.chapterCounts.keys.toList()..sort()).first
-                    : 1;
-                _goTo(ChapterRef(newBook.number, firstChapter));
+                // Re-picking the book the user is already reading in keeps
+                // the current chapter; any other book starts at chapter 1.
+                final targetChapter = newBook.number == displayBookInfo.number
+                    ? displayChapter
+                    : (newBook.chapterCounts.keys.isNotEmpty
+                          ? (newBook.chapterCounts.keys.toList()..sort()).first
+                          : 1);
+                _goTo(ChapterRef(newBook.number, targetChapter));
               },
             );
           },
@@ -740,15 +761,12 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
 // --- Top Bar Widget ---
 class _TopBar extends StatelessWidget {
   final String bookName;
-  final int chapter; // value for chapter dropdown
-  final int? displayChapter; // displayed in the label (can follow scroll)
-  final List<BookInfo> books;
-  final List<int> chapterKeys;
+  final int chapter; // visible chapter (follows scroll)
+  final List<int> chapterKeys; // visible book's chapter numbers
   final String? translationId;
   final String? translationName;
   final bool continuousReading;
   final ValueChanged<bool> onContinuousReadingChanged;
-  final Function(BookInfo) onBookChanged;
   final VoidCallback onChapterTap;
   final GlobalKey? chapterButtonKey;
   final VoidCallback onBookTap;
@@ -759,14 +777,11 @@ class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.bookName,
     required this.chapter,
-    required this.displayChapter,
-    required this.books,
     required this.chapterKeys,
     this.translationId,
     this.translationName,
     required this.continuousReading,
     required this.onContinuousReadingChanged,
-    required this.onBookChanged,
     required this.onChapterTap,
     this.chapterButtonKey,
     required this.onBookTap,
@@ -779,7 +794,7 @@ class _TopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final chapterToShow = displayChapter ?? chapter;
+    final chapterToShow = chapterKeys.contains(chapter) ? chapter : 1;
 
     // Use the actual translation ID or a fallback
     final displayTranslation = translationId?.toUpperCase() ?? 'KJV';
@@ -831,13 +846,11 @@ class _TopBar extends StatelessWidget {
               ),
               const SizedBox(width: AppSpacing.s16),
               // Chapter picker: opens the number grid dropdown (§2 pattern).
-              // The label keeps the "Chapter N" wording; the grid shows
-              // whichever chapter is currently visible on screen, falling
-              // back to the navigation chapter across book boundaries.
+              // The label follows whichever chapter is visible on screen
+              // (continuous mode drifts across books).
               Semantics(
                 button: true,
-                label:
-                    'Chapter ${chapterKeys.contains(chapterToShow) ? chapterToShow : chapter}. Tap to switch.',
+                label: 'Chapter $chapterToShow. Tap to switch.',
                 child: InkWell(
                   key: chapterButtonKey,
                   onTap: onChapterTap,
@@ -851,7 +864,7 @@ class _TopBar extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          'Chapter ${chapterKeys.contains(chapterToShow) ? chapterToShow : chapter}',
+                          'Chapter $chapterToShow',
                           style: AppTypography.uiLabel.copyWith(
                             fontWeight: FontWeight.w600,
                             color: colorScheme.onSurface,
@@ -979,6 +992,9 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
   int _centerIndex = 0;
   late final List<_LoadedChapter> _chapters = [widget.initialChapter];
   final List<GlobalKey> _chapterHeaderKeys = [GlobalKey()];
+  // Index into [_chapters] of the chapter currently centred in the viewport
+  // (updated by [_updateVisibleChapter]). Drives trimming.
+  int _visibleIndex = 0;
   // One key per rendered verse so keyboard stepping can measure where verses
   // sit. Keyed by VerseRef, not by list index: continuous mode prepends
   // chapters, which would shift indices out from under the keys.
@@ -991,6 +1007,15 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
   bool _reachedEnd = false;
   bool _loadingPrev = false;
   bool _reachedStart = false;
+
+  /// Keeps [_chapters] and its per-verse caches bounded in continuous mode:
+  /// once more than [_maxLoadedChapters] chapters are loaded, chapters
+  /// further than [_trimMargin] from the visible one are dropped (they are
+  /// reloaded on demand if the user scrolls back). Without this, a long
+  /// continuous session grows the chapter list, the verse GlobalKeys, and
+  /// the highlight map without limit.
+  static const _maxLoadedChapters = 24;
+  static const _trimMargin = 8;
 
   void _toggleVerse(_LoadedChapter chapter, Verse verse) {
     // Selection lives in selectedVersesProvider (shared with the §5 action
@@ -1021,24 +1046,17 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
   // Cooldown timer to prevent rapid successive loading.
   Timer? _loadCooldownTimer;
 
-  /// (Re)loads highlights for every loaded chapter into [_highlightsByVerse].
+  /// (Re)loads highlights for every loaded chapter into
+  /// [_highlightsByVerse]. The chapter list is bounded (see
+  /// [_maybeTrimChapters]), so this stays cheap. Used after highlight
+  /// writes, where any loaded verse may have changed.
   Future<void> _reloadHighlights() async {
     final translationId = ref.read(currentTranslationProvider);
     if (translationId == null) return;
     final db = ref.read(databaseProvider);
     final loaded = <VerseRef, Color>{};
     for (final ch in List<_LoadedChapter>.of(_chapters)) {
-      final rows = await db.getHighlightsForChapter(
-        translationId,
-        ch.book,
-        ch.chapter,
-      );
-      for (final h in rows) {
-        final color = highlightColorFromHex(h.color);
-        if (color != null) {
-          loaded[VerseRef(h.bookNumber, h.chapter, h.verse)] = color;
-        }
-      }
+      await _collectHighlights(db, translationId, ch, loaded);
     }
     if (!mounted) return;
     setState(() {
@@ -1048,15 +1066,96 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
     });
   }
 
+  /// Loads highlights for one newly appended/prepended chapter and merges
+  /// them into [_highlightsByVerse] — a single query per chapter load,
+  /// instead of re-reading every loaded chapter.
+  Future<void> _loadHighlightsFor(_LoadedChapter ch) async {
+    final translationId = ref.read(currentTranslationProvider);
+    if (translationId == null) return;
+    final db = ref.read(databaseProvider);
+    final loaded = <VerseRef, Color>{};
+    await _collectHighlights(db, translationId, ch, loaded);
+    if (!mounted || loaded.isEmpty) return;
+    setState(() => _highlightsByVerse.addAll(loaded));
+  }
+
+  Future<void> _collectHighlights(
+    AppDatabase db,
+    String translationId,
+    _LoadedChapter ch,
+    Map<VerseRef, Color> into,
+  ) async {
+    final rows = await db.getHighlightsForChapter(
+      translationId,
+      ch.book,
+      ch.chapter,
+    );
+    for (final h in rows) {
+      final color = highlightColorFromHex(h.color);
+      if (color != null) {
+        into[VerseRef(h.bookNumber, h.chapter, h.verse)] = color;
+      }
+    }
+  }
+
+  /// Drops the per-verse caches (keyboard-step keys, highlights) belonging
+  /// to [ch] when the chapter is trimmed out of [_chapters].
+  void _dropChapterCaches(_LoadedChapter ch) {
+    for (final v in ch.verses) {
+      final ref = VerseRef(ch.book, ch.chapter, v.verse);
+      _verseKeys.remove(ref);
+      _highlightsByVerse.remove(ref);
+    }
+  }
+
+  /// Trims [_chapters] back toward [_maxLoadedChapters], dropping chapters
+  /// far above/below the visible one. Called inside setState after each
+  /// chapter load. Because the scroll view is centre-anchored and the
+  /// trimmed chapters are well off-screen, the viewport doesn't shift.
+  void _maybeTrimChapters() {
+    if (_chapters.length <= _maxLoadedChapters) return;
+
+    // Drop from the front (oldest prepended chapters, far above the
+    // viewport). Removing them shifts the centre anchor's list index.
+    var removedFront = 0;
+    while (_chapters.length - removedFront > _maxLoadedChapters &&
+        _visibleIndex - removedFront > _trimMargin) {
+      _dropChapterCaches(_chapters[removedFront]);
+      removedFront++;
+    }
+    if (removedFront > 0) {
+      _chapters.removeRange(0, removedFront);
+      _chapterHeaderKeys.removeRange(0, removedFront);
+      _centerIndex -= removedFront;
+      _visibleIndex -= removedFront;
+      // The user may scroll back up into trimmed territory — let it reload.
+      _reachedStart = false;
+    }
+
+    // Drop from the end (chapters far below the viewport).
+    while (_chapters.length > _maxLoadedChapters &&
+        _chapters.length - 1 - _visibleIndex > _trimMargin) {
+      _dropChapterCaches(_chapters.removeLast());
+      _chapterHeaderKeys.removeLast();
+      _reachedEnd = false;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
-    // Set the visible chapter after the first frame to avoid modifying provider during build.
+    // Set the visible location after the first frame to avoid modifying
+    // provider during build.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         ref
-            .read(visibleChapterProvider.notifier)
-            .set(widget.initialChapter.chapter);
+            .read(visibleLocationProvider.notifier)
+            .set(
+              ChapterRef(
+                widget.initialChapter.book,
+                widget.initialChapter.chapter,
+              ),
+            );
         // Content recreation (navigation, translation switch) starts a
         // fresh selection — mirrors the pre-provider local-state behavior.
         ref.read(selectedVersesProvider.notifier).clear();
@@ -1086,8 +1185,11 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
     super.dispose();
   }
 
-  /// Updates [visibleChapterProvider] to the chapter whose header was most
-  /// recently above the vertical midpoint of the viewport.
+  /// Updates [visibleLocationProvider] (book AND chapter) to the chapter
+  /// whose header was most recently above the vertical midpoint of the
+  /// viewport, so the top bar and pickers follow continuous-mode drift
+  /// across book boundaries. Also records [_visibleIndex] for trimming and
+  /// persists the position (debounced inside the notifier).
   void _updateVisibleChapter() {
     if (!mounted || !_scrollController.hasClients) return;
 
@@ -1109,7 +1211,10 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
           .dy;
 
       if (topInViewport <= halfViewport) {
-        ref.read(visibleChapterProvider.notifier).set(_chapters[i].chapter);
+        _visibleIndex = i;
+        ref
+            .read(visibleLocationProvider.notifier)
+            .set(ChapterRef(_chapters[i].book, _chapters[i].chapter));
         // Persist the centered chapter so the reader reopens here — this
         // covers continuous-mode reading (incl. cross-book drift), which
         // never goes through navigation. Debounced inside the notifier.
@@ -1150,12 +1255,13 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
       } else {
         _chapters.add(next);
         _chapterHeaderKeys.add(GlobalKey());
+        _maybeTrimChapters();
       }
       _loadingNext = false;
     });
     if (next != null && next.verses.isNotEmpty) {
       // Pick up any highlights in the newly loaded chapter.
-      _reloadHighlights();
+      _loadHighlightsFor(next);
     }
 
     // If we loaded a chapter, schedule another check after a cooldown.
@@ -1213,9 +1319,11 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
       _chapters.insert(0, prev);
       _chapterHeaderKeys.insert(0, GlobalKey());
       _centerIndex += 1;
+      _visibleIndex += 1;
+      _maybeTrimChapters();
     });
     // Pick up any highlights in the newly loaded chapter.
-    _reloadHighlights();
+    _loadHighlightsFor(prev);
     _loadingPrev = false;
   }
 

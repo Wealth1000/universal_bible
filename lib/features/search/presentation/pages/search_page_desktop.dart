@@ -13,9 +13,10 @@ import 'package:universal_bible/database/app_database.dart'
 import 'package:universal_bible/features/bible/domain/reader_provider.dart';
 import 'package:universal_bible/features/settings/domain/book_name_settings_provider.dart';
 
-/// Search over the active translation's verse text. Results update as the
-/// user types (debounced); tapping a result jumps the reader to that
-/// chapter.
+/// Search over verse text. A scope selector picks a single translation or
+/// "All translations"; results update as the user types (debounced) and are
+/// badged with their translation. Tapping a result jumps the reader to that
+/// chapter (in that translation).
 class SearchPageDesktop extends ConsumerStatefulWidget {
   const SearchPageDesktop({super.key});
 
@@ -24,7 +25,7 @@ class SearchPageDesktop extends ConsumerStatefulWidget {
 }
 
 class _SearchPageState extends ConsumerState<SearchPageDesktop> {
-  static const _resultLimit = 200;
+  static const _resultLimit = 200; // per translation
   static const _minQueryLength = 3;
 
   final TextEditingController _controller = TextEditingController();
@@ -34,15 +35,22 @@ class _SearchPageState extends ConsumerState<SearchPageDesktop> {
   bool _searching = false;
   bool _truncated = false;
 
-  // Book number → display name for the active translation (same derivation
-  // as ComparePageDesktop).
-  Map<int, String> _bookNames = const {};
-  String? _translationId;
+  // Guards against stale responses when the query or scope changes while a
+  // multi-translation search is still running.
+  int _searchSeq = 0;
+
+  List<Translation> _translations = const [];
+  // Translation id → (book number → display name). Book maps differ per
+  // translation, so results are labelled with their own translation's names.
+  Map<String, Map<int, String>> _bookNamesById = const {};
+
+  /// Search scope: a translation id, or null for "All translations".
+  String? _scopeId;
 
   @override
   void initState() {
     super.initState();
-    _loadBookNames();
+    _loadTranslations();
   }
 
   @override
@@ -52,31 +60,32 @@ class _SearchPageState extends ConsumerState<SearchPageDesktop> {
     super.dispose();
   }
 
-  Future<void> _loadBookNames() async {
-    // Search the active translation; fall back to the first installed one
-    // (e.g. when Search is opened before the reader ever ran).
-    var translationId = ref.read(currentTranslationProvider);
+  Future<void> _loadTranslations() async {
     final repo = ref.read(translationRepoProvider);
-    if (translationId == null) {
-      final installed = await repo.getInstalled();
-      if (installed.isEmpty) return;
-      translationId = installed.first.id;
-    }
-    final trans = await repo.get(translationId);
-    if (trans == null) return;
-    final bookMap = jsonDecode(trans.bookMapJson) as Map<String, dynamic>;
+    final installed = await repo.getInstalled();
+    if (!mounted) return;
+
     final preserveOriginal = ref.read(preserveOriginalBookNamesProvider);
-    final names = <int, String>{};
-    bookMap.forEach((name, number) {
-      names[number as int] =
-          formatBookName(name, preserveOriginal: preserveOriginal);
-    });
-    if (mounted) {
-      setState(() {
-        _translationId = translationId;
-        _bookNames = names;
+    final namesById = <String, Map<int, String>>{};
+    for (final t in installed) {
+      final bookMap = jsonDecode(t.bookMapJson) as Map<String, dynamic>;
+      final names = <int, String>{};
+      bookMap.forEach((name, number) {
+        names[number as int] =
+            formatBookName(name, preserveOriginal: preserveOriginal);
       });
+      namesById[t.id] = names;
     }
+
+    // Default scope: the active translation (reader's cascade), else all.
+    final current = ref.read(currentTranslationProvider);
+    final scope = installed.any((t) => t.id == current) ? current : null;
+
+    setState(() {
+      _translations = installed;
+      _bookNamesById = namesById;
+      _scopeId = scope;
+    });
   }
 
   void _onQueryChanged(String value) {
@@ -86,13 +95,21 @@ class _SearchPageState extends ConsumerState<SearchPageDesktop> {
     });
   }
 
+  /// The translations the current scope covers, in installed order.
+  List<String> get _scopeIds => _scopeId != null
+      ? [_scopeId!]
+      : [for (final t in _translations) t.id];
+
   Future<void> _runSearch(String query) async {
+    _searchSeq++;
+    final seq = _searchSeq;
     if (!mounted) return;
-    if (query.length < _minQueryLength || _translationId == null) {
+    if (query.length < _minQueryLength || _scopeIds.isEmpty) {
       setState(() {
         _query = query;
         _results = null;
         _searching = false;
+        _truncated = false;
       });
       return;
     }
@@ -100,19 +117,25 @@ class _SearchPageState extends ConsumerState<SearchPageDesktop> {
       _query = query;
       _searching = true;
     });
-    final results = await ref
-        .read(databaseProvider)
-        .searchVerses(_translationId!, query, limit: _resultLimit);
-    if (!mounted || _query != query) return; // stale response
+
+    final db = ref.read(databaseProvider);
+    final results = <Verse>[];
+    var truncated = false;
+    for (final id in _scopeIds) {
+      final part = await db.searchVerses(id, query, limit: _resultLimit);
+      if (part.length >= _resultLimit) truncated = true;
+      results.addAll(part);
+    }
+    if (!mounted || seq != _searchSeq) return; // stale response
     setState(() {
       _results = results;
-      _truncated = results.length >= _resultLimit;
+      _truncated = truncated;
       _searching = false;
     });
   }
 
-  /// Jumps the reader to the result's chapter (same provider + persistence
-  /// pattern the reader's own navigation uses).
+  /// Jumps the reader to the result's chapter (in the result's translation,
+  /// same provider + persistence pattern the reader's own navigation uses).
   void _openResult(Verse verse) {
     ref.read(currentTranslationProvider.notifier).set(verse.translationId);
     ref.read(currentBookProvider.notifier).set(verse.bookNumber);
@@ -125,6 +148,14 @@ class _SearchPageState extends ConsumerState<SearchPageDesktop> {
           ),
         );
     context.go('/reader');
+  }
+
+  String _scopeLabel() {
+    final scope = _scopeId;
+    if (scope == null) return 'All';
+    return _translations
+        .firstWhere((t) => t.id == scope, orElse: () => _translations.first)
+        .id;
   }
 
   @override
@@ -152,27 +183,35 @@ class _SearchPageState extends ConsumerState<SearchPageDesktop> {
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
-                child: TextField(
-                  controller: _controller,
-                  autofocus: true,
-                  onChanged: _onQueryChanged,
-                  decoration: InputDecoration(
-                    hintText: 'Search verses…',
-                    prefixIcon: const Icon(Icons.search),
-                    suffixIcon: _controller.text.isEmpty
-                        ? null
-                        : IconButton(
-                            tooltip: 'Clear',
-                            icon: const Icon(Icons.close),
-                            onPressed: () {
-                              _controller.clear();
-                              _runSearch('');
-                            },
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _controller,
+                        autofocus: true,
+                        onChanged: _onQueryChanged,
+                        decoration: InputDecoration(
+                          hintText: 'Search verses…',
+                          prefixIcon: const Icon(Icons.search),
+                          suffixIcon: _controller.text.isEmpty
+                              ? null
+                              : IconButton(
+                                  tooltip: 'Clear',
+                                  icon: const Icon(Icons.close),
+                                  onPressed: () {
+                                    _controller.clear();
+                                    _runSearch('');
+                                  },
+                                ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 8),
+                    _buildScopeSelector(theme, colorScheme),
+                  ],
                 ),
               ),
               Expanded(child: _buildResults(theme, colorScheme)),
@@ -183,9 +222,66 @@ class _SearchPageState extends ConsumerState<SearchPageDesktop> {
     );
   }
 
+  /// Translation scope: "All" or a single installed translation.
+  Widget _buildScopeSelector(ThemeData theme, ColorScheme colorScheme) {
+    return PopupMenuButton<String?>(
+      tooltip: 'Search scope',
+      initialValue: _scopeId,
+      onSelected: (id) {
+        setState(() => _scopeId = id);
+        _runSearch(_query);
+      },
+      itemBuilder: (context) => [
+        const PopupMenuItem<String?>(
+          value: null,
+          child: Text('All translations'),
+        ),
+        for (final t in _translations)
+          PopupMenuItem<String>(
+            value: t.id,
+            child: Text('${t.id} — ${t.name}'),
+          ),
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: colorScheme.outline),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.translate, size: 18, color: colorScheme.primary),
+            const SizedBox(width: 6),
+            Text(
+              _scopeLabel(),
+              style: theme.textTheme.labelLarge?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: colorScheme.primary,
+              ),
+            ),
+            const SizedBox(width: 2),
+            Icon(Icons.expand_more, size: 18, color: colorScheme.outline),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildResults(ThemeData theme, ColorScheme colorScheme) {
     if (_searching) {
       return const Center(child: CircularProgressIndicator());
+    }
+    if (_translations.isEmpty) {
+      return Center(
+        child: Text(
+          'No translations installed.\nImport one from Settings first.',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+      );
     }
     if (_results == null) {
       return Center(
@@ -221,8 +317,10 @@ class _SearchPageState extends ConsumerState<SearchPageDesktop> {
             child: Center(
               child: Text(
                 _truncated
-                    ? 'Showing the first $_resultLimit matches — refine your search.'
-                    : '${results.length} result${results.length == 1 ? '' : 's'}',
+                    ? 'Showing the first $_resultLimit matches per '
+                      'translation — refine your search.'
+                    : '${results.length} result${results.length == 1 ? '' : 's'}'
+                      '${_scopeId == null ? ' across ${_translations.length} translations' : ''}',
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: colorScheme.onSurfaceVariant,
                 ),
@@ -231,11 +329,16 @@ class _SearchPageState extends ConsumerState<SearchPageDesktop> {
           );
         }
         final v = results[index];
+        final names = _bookNamesById[v.translationId] ?? const {};
         final reference =
-            '${_bookNames[v.bookNumber] ?? 'Book ${v.bookNumber}'} '
+            '${names[v.bookNumber] ?? 'Book ${v.bookNumber}'} '
             '${v.chapter}:${v.verse}';
         return _ResultTile(
           reference: reference,
+          translationId: v.translationId,
+          // The badge is only informative when more than one translation
+          // is in scope.
+          showTranslationBadge: _scopeId == null && _translations.length > 1,
           text: normalizeResolvedScriptureText(v.verseText),
           query: _query,
           onTap: () => _openResult(v),
@@ -247,12 +350,16 @@ class _SearchPageState extends ConsumerState<SearchPageDesktop> {
 
 class _ResultTile extends StatelessWidget {
   final String reference;
+  final String translationId;
+  final bool showTranslationBadge;
   final String text;
   final String query;
   final VoidCallback onTap;
 
   const _ResultTile({
     required this.reference,
+    required this.translationId,
+    required this.showTranslationBadge,
     required this.text,
     required this.query,
     required this.onTap,
@@ -299,12 +406,40 @@ class _ResultTile extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              reference,
-              style: theme.textTheme.labelMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: colorScheme.primary,
-              ),
+            Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    reference,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: colorScheme.primary,
+                    ),
+                  ),
+                ),
+                if (showTranslationBadge) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 1,
+                    ),
+                    decoration: BoxDecoration(
+                      color: colorScheme.surfaceContainerHigh,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      translationId,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: colorScheme.onSurfaceVariant,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
             const SizedBox(height: 4),
             Text.rich(

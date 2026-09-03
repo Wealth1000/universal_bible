@@ -145,15 +145,17 @@ class _TranslationManagerPageState
     if (shouldDelete != true) return;
 
     try {
-      // TODO: Implement delete in TranslationRepository
-      // await repo.deleteTranslation(id);
+      await ref.read(translationRepoProvider).deleteTranslation(id);
+      // Deleting the ACTIVE translation leaves the reader pointing at a
+      // missing translation — fall back to another installed one (the
+      // list refresh below picks it up) or clear it.
+      if (ref.read(currentTranslationProvider) == id) {
+        ref.read(currentTranslationProvider.notifier).set(null);
+      }
       await _loadTranslations();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Translation deleted.'),
-            backgroundColor: AppColors.danger(Theme.of(context).brightness),
-          ),
+          const SnackBar(content: Text('Translation deleted.')),
         );
       }
     } catch (e) {

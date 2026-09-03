@@ -1,281 +1,118 @@
 # Universal Bible
 
-A lightweight, cross-platform, **offline-first** Bible application built with Flutter. Designed for personal use with structured cloud synchronization of translations and study data via Supabase.
+An offline-first desktop Bible application built with Flutter. Universal Bible keeps scripture reading, personal study tools, and daily devotionals on your machine — no accounts, no cloud sync, and no network required to read.
 
-This project prioritizes **clarity**, **performance**, and **long-term maintainability** over feature bloat.
-
----
-
-## Table of Contents
-
-- [Vision](#-vision)
-- [Platform & Tech Stack](#-platform--tech-stack)
-- [Core Features](#-core-features)
-- [Translation Sync Model](#-translation-sync-model)
-- [Devotional Integration](#-devotional-integration)
-- [Personal Study Tools](#-personal-study-tools)
-- [Synchronization Model](#-synchronization-model)
-- [Offline-First Design](#-offline-first-design)
-- [Backend Overview (Supabase)](#-backend-overview-supabase)
-- [Design Principles](#-design-principles)
-- [Project Structure](#-conceptual-project-structure)
-- [Development Phases](#-development-phases)
-- [Long-Term Roadmap](#-long-term-roadmap)
-- [Prerequisites](#-prerequisites)
-- [Getting Started](#-getting-started)
-- [Status & Next Steps](#-status--next-steps)
-- [License](#-license)
+The project prioritizes clarity, performance, and long-term maintainability over feature bloat.
 
 ---
 
-## ✨ Vision
+## What It Does
 
-To build a clean, modern Bible application that:
+- **Continuous scripture reading** — scroll seamlessly from chapter to chapter and book to book in a distraction-free layout. The header follows your position as you read, and loaded chapters are trimmed as you go so memory stays bounded during long reading sessions.
+- **Multiple translations** — import translations from `.bdat` files and switch between them instantly. All scripture is stored locally in SQLite and available offline.
+- **Verse comparison** — select verses and read them side-by-side across every installed translation, in a split pane or full screen.
+- **Search** — full-text verse search across a single translation or all installed translations at once, with results badged by translation and matches highlighted inline.
+- **Study tools** — verse highlighting, bookmarks, and verse-attached notes. Your reading position is remembered per translation, so you return exactly where you left off.
+- **Daily devotionals** — Rhapsody of Realities devotionals with readable formatting and tappable scripture references that resolve to the passage in your own translations.
+- **Comfort options** — red-letter words of Christ, light/dark/system themes, adjustable font size and zoom, inline verse numbers, and full or canonical book names.
 
-- **Works fully offline** — no reading dependency on live network access
-- **Supports flexible Bible translation imports** — multiple formats, local + synced
-- **Syncs translations and personal data across devices** — via Supabase
-- **Integrates structured monthly devotionals** — predictable, offline-friendly
-- **Remains lightweight and focused** — personal productivity, not a commercial platform
+### Privacy
 
----
-
-## 🛠 Platform & Tech Stack
-
-### Frontend
-
-| Area        | Choice                          |
-| ----------- | ------------------------------- |
-| **Framework** | Flutter                         |
-| **Targets**  | Linux, Windows, Android        |
-| **Future**   | macOS, Web (optional)          |
-
-### Backend
-
-| Area        | Choice                          |
-| ----------- | ------------------------------- |
-| **BaaS**    | Supabase                        |
-| **Database**| PostgreSQL                      |
-| **Auth**    | Supabase Authentication         |
-| **Storage** | Per-user data + Storage buckets (e.g. translation files) |
+All scripture, notes, highlights, bookmarks, and reading positions are stored in a local database on your device. There are no user accounts and no data leaves your machine. The only network usage is fetching devotional content from a public Supabase endpoint (using a publishable key — no authentication involved).
 
 ---
 
-## 📖 Core Features
+## Platform & Tech Stack
 
-### 1. Bible Reader
-
-- Multiple translation support
-- Downloadable / importable translations
-- Multiple file formats (e.g. JSON, XML, structured text, **SQLite / .sqlite3**)
-- Fast verse navigation
-- Clean, distraction-free reading layout
-
-Translations are **structured datasets** that:
-
-- Can be imported locally
-- Are stored offline
-- **Are synced across devices via Supabase**
-- Can be re-downloaded on new devices automatically
+| Area | Choice |
+| --- | --- |
+| **Framework** | Flutter (desktop) |
+| **Targets** | Linux, Windows |
+| **State management** | Riverpod |
+| **Navigation** | go_router |
+| **Local database** | Drift (SQLite) |
+| **Preferences** | SharedPreferences |
+| **Devotional content** | Supabase (public content, publishable key only) |
 
 ---
 
-## 🌐 Translation Sync Model
-
-Translations are **logically user-owned assets**, but the imported translation files themselves live in a **central shared storage bucket**. This keeps things simple for this personal, single-user setup while making reuse across accounts/devices trivial.
-
-### How It Works
-
-1. User imports or downloads a translation.
-2. Translation **metadata** is registered in Supabase (e.g. id, language, source, checksum).
-3. The translation **file** is uploaded to a **central Supabase Storage bucket** (if not already present).
-4. Other devices or accounts (within this personal environment) linked to the same Supabase project:
-   - Fetch translation metadata
-   - Download the translation file automatically
-   - Store it locally
-
-### Goals
-
-- No need to re-import translations on every device
-- Offline availability after first download
-- Efficient storage and caching
-- Minimal redundant uploads
-
----
-
-## 📘 Devotional Integration
-
-### Monthly Devotional Model
-
-- **Full monthly devotional books** are downloaded (not daily sync).
-- Stored locally; browsable by date or month.
-- Optional pre-download of future months.
-
-**Benefits:** reduced network usage, reliable offline access, structured storage, fewer backend calls.
-
-Devotionals may optionally be backed up to Supabase for cross-device continuity.
-
----
-
-## ✍ Personal Study Tools
-
-- Verse highlighting  
-- Bookmarks  
-- Notes attached to verses  
-- Reading position tracking  
-- Adjustable fonts  
-- Dark / Light mode  
-
-All user-generated data is written **locally first**, synced to Supabase, and available across devices and offline.
-
----
-
-## 🔄 Synchronization Model
-
-Sync is a core feature.
-
-### Synced Data
-
-| Data type           | Synced | Notes                    |
-| ------------------- | ------ | ------------------------- |
-| Translations        | ✅     | Files + metadata          |
-| Highlights          | ✅     |                           |
-| Notes               | ✅     |                           |
-| Bookmarks           | ✅     |                           |
-| Reading position    | ✅     |                           |
-| Devotional progress | Optional | Per design             |
-
-### Sync Strategy
-
-- **Local-first writes** — app remains usable without immediate internet
-- **Background synchronization** when connection is available
-- **Conflict resolution** — last-write-wins initially; delta-based updates where possible
-- **Manual re-sync** option
-- No reading functionality must depend on live network access
-
----
-
-## 📦 Offline-First Design
-
-The app **must** function without internet:
-
-- Bible translations cached locally  
-- Devotionals stored locally  
-- User data (highlights, notes, bookmarks) stored locally  
-- Sync occurs when a connection is available  
-
----
-
-## 🔐 Backend Overview (Supabase)
-
-Supabase is used for:
-
-- **Authentication** — user accounts and sessions  
-- **PostgreSQL database** — structured user data  
-- **Row-level security** — strict per-user isolation for notes, highlights, bookmarks, etc.  
-- **Storage buckets** — a **central bucket for translation files** (shared within this personal project) plus any other assets  
-- **API access** — typed client (e.g. Dart) for all operations  
-
-Although translation files reside in a shared bucket for convenience, this project is designed as a **personal tool with a single real-world user**, so there are no practical privacy concerns from cross-account sharing.
-
----
-
-## 🎯 Design Principles
-
-- **Offline-first** — full functionality without network  
-- **Minimal but powerful** — no unnecessary features  
-- **Modular architecture** — clear separation of features and sync  
-- **Clean, responsive UI** — readable and accessible  
-- **Sync without bloat** — efficient and predictable  
-- **Personal control over data** — user owns and can export data  
-
----
-
-## 🗂 Conceptual Project Structure
+## Project Structure
 
 ```
 lib/
-├── core/           # Shared utilities, constants, base types
+├── core/                  # Shared providers, utils, routing, app shell, design tokens
+│   ├── database/          # Drift database, tables, DAOs (via lib/database)
+│   └── providers/         # Database, translation repo, reading settings
+├── database/              # Schema: translations, verses, notes, highlights,
+│                          # bookmarks, reading positions
 ├── features/
-│   ├── bible/      # Reader, translation loading, verse navigation
-│   ├── devotionals/
-│   ├── highlights/
-│   ├── notes/
-│   └── bookmarks/
-├── sync/           # Supabase sync engine, conflict resolution
-├── storage/        # Local persistence (e.g. SQLite / Hive)
-└── ui/             # Shared widgets, themes, layout
+│   ├── bible/             # Reader, chapter navigation, selection, compare view
+│   ├── rhapsody/          # Daily devotional: fetch, parse, scripture resolution
+│   ├── search/            # Multi-translation verse search
+│   ├── settings/          # Appearance, reading, and data preferences
+│   └── translation_manager/ # Import, inspect, and remove translations
+└── main.dart
+```
+
+Translation data is imported from `.bdat` files (parsed on a background isolate), with verses indexed by `book × 1,000,000 + chapter × 1,000 + verse` for fast chapter lookups.
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- **Flutter** — stable channel (SDK constraint as defined in `pubspec.yaml`)
+- **Dart** — 3.x
+- **Platform SDK** — Linux GTK development libraries, or the Windows SDK
+
+### Setup
+
+1. Clone the repository and install dependencies:
+
+   ```sh
+   flutter pub get
+   ```
+
+2. Create a `.env` file in the repository root with the Supabase credentials used for devotional content:
+
+   ```
+   SUPABASE_URL=...
+   SUPABASE_PUBLISHABLE_KEY=...
+   ```
+
+   These keys are public by design (publishable key, no auth). `.env` is git-ignored; see `.env.example`.
+
+   > The app requires this file at startup (Supabase initializes at boot for devotional content). Everything else — reading, study tools, search — runs fully offline once a translation is installed.
+
+3. Run the app:
+
+   ```sh
+   flutter run -d linux    # or -d windows
+   ```
+
+4. Import a `.bdat` translation from **Settings → Manage Translations** and start reading.
+
+### Development
+
+```sh
+flutter analyze   # Static analysis (kept clean)
+flutter test      # Unit tests: book-name parsing, chapter navigation,
+                  # scripture formatting, reference parsing, devotional parsing
 ```
 
 ---
 
-## 🏗 Development Phases
+## Design Principles
 
-| Phase | Focus | Deliverables |
-| ----- | ----- | ------------ |
-| **Phase 1 – Core Reader** | Translation import, local storage, verse rendering | Import system, local DB, basic UI |
-| **Phase 2 – Devotionals** | Monthly model, date navigation | Storage model, pre-download logic |
-| **Phase 3 – Study Tools** | Highlights, notes, bookmarks | CRUD + UI, customization (fonts, theme) |
-| **Phase 4 – Sync Engine** | Supabase integration | Auth, DB schema, translation storage, background sync, conflict resolution |
-
----
-
-## 🧠 Long-Term Roadmap
-
-- Advanced search (cross-translation)  
-- Cross-reference linking  
-- Highlight color tagging  
-- Reading plans  
-- Encrypted local database (optional)  
-- Device management for sync  
-- Structured backup export (e.g. JSON)  
+- **Offline-first** — no reading or study functionality depends on network access
+- **Local data ownership** — everything the app stores stays on your device
+- **Minimal but complete** — focused feature set, no bloat
+- **Modular architecture** — feature-first layout with shared code in `core/`
+- **Measured performance** — bounded memory in continuous reading, background-isolate imports, single-query highlight loads
 
 ---
 
-## 📋 Prerequisites
-
-When implementation begins, expect to need:
-
-- **Flutter** — stable channel (SDK as defined in `pubspec.yaml`)  
-- **Dart** — 3.x  
-- **Supabase** — account and project for auth, database, and storage  
-- **Target platform SDKs** — e.g. Android SDK, Windows SDK, for chosen platforms  
-
----
-
-## 🚀 Getting Started
-
-**Current status: planning.** No application code is required to run yet.
-
-When development starts:
-
-1. Clone the repository and run `flutter pub get`.  
-2. Configure Supabase (env vars or config file) for auth and API URL.  
-3. Use the phase plan above to implement in order.  
-
-For Flutter itself:
-
-- [Flutter install](https://docs.flutter.dev/get-started/install)  
-- [First Flutter app](https://docs.flutter.dev/get-started/codelab)  
-- [Flutter documentation](https://docs.flutter.dev/)  
-
----
-
-## 📌 Status & Next Steps
-
-**Status:** Planning stage. Architecture direction defined; implementation scheduled for a later phase.
-
-**When development begins, the next critical steps will be:**
-
-1. **Design the translation file specification** — format, schema, and validation rules.  
-2. **Define database schema** — local (e.g. SQLite) and Supabase (PostgreSQL).  
-3. **Build a robust sync engine** — auth, upload/download, conflict handling.  
-4. **Choose a state management solution** — e.g. Riverpod, Provider, or Bloc, and apply consistently.  
-
-The project will grow **deliberately and structurally** — not rapidly and chaotically.
-
----
-
-## 📄 License
+## License
 
 Private / personal use. See repository or author for terms.
