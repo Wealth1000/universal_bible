@@ -2,11 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:universal_bible/core/design/app_tokens.dart';
-import 'package:universal_bible/core/providers/database_provider.dart';
 import 'package:universal_bible/core/providers/translation_repo_provider.dart';
 import 'package:universal_bible/core/utils/scripture_format.dart';
-import 'package:universal_bible/database/app_database.dart'
-    hide ReadingPosition;
+import 'package:universal_bible/database/app_database.dart';
 import 'package:universal_bible/features/bible/domain/reader_provider.dart';
 
 /// One translation's rendering of the compared selection.
@@ -52,16 +50,16 @@ class _CompareColumnState extends ConsumerState<CompareColumn> {
   String? _blocksKey;
 
   Future<List<_TranslationBlock>> _loadBlocks() async {
-    final translations = await ref.read(translationRepoProvider).getInstalled();
+    final bibleData = ref.read(bibleDataModuleProvider);
+    final translations = await bibleData.getInstalledTranslations();
     translations.sort(
       (a, b) => a.id.toLowerCase().compareTo(b.id.toLowerCase()),
     );
-    final db = ref.read(databaseProvider);
     final blocks = <_TranslationBlock>[];
     for (final t in translations) {
       final texts = <String?>[];
       for (final v in widget.refs) {
-        final row = await db.getVerse(t.id, v.book, v.chapter, v.verse);
+        final row = await bibleData.getVerse(t.id, v.book, v.chapter, v.verse);
         texts.add(row?.verseText);
       }
       blocks.add(_TranslationBlock(t, texts));

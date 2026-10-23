@@ -6,7 +6,7 @@ import 'package:universal_bible/core/providers/reading_settings_provider.dart';
 import 'package:universal_bible/core/providers/translation_repo_provider.dart';
 import 'package:universal_bible/core/themes/theme_provider.dart';
 import 'package:universal_bible/database/app_database.dart';
-import 'package:universal_bible/features/settings/domain/book_name_settings_provider.dart';
+import 'package:universal_bible/core/providers/book_name_settings_provider.dart';
 import '../../../../core/services/storage_service.dart';
 
 class SettingsPage extends ConsumerStatefulWidget {

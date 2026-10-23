@@ -10,9 +10,8 @@ import 'package:universal_bible/core/providers/reading_settings_provider.dart';
 import 'package:universal_bible/core/providers/translation_repo_provider.dart';
 import 'package:universal_bible/core/utils/book_name_utils.dart';
 import 'package:universal_bible/core/utils/scripture_format.dart';
-import 'package:universal_bible/database/app_database.dart'
-    hide ReadingPosition;
-import 'package:universal_bible/features/settings/domain/book_name_settings_provider.dart';
+import 'package:universal_bible/database/app_database.dart';
+import 'package:universal_bible/core/providers/book_name_settings_provider.dart';
 import 'package:universal_bible/features/bible/domain/book_info.dart';
 import 'package:universal_bible/features/bible/domain/chapter_navigation.dart';
 import 'package:universal_bible/features/bible/domain/continuous_reading_provider.dart';
@@ -22,6 +21,7 @@ import 'package:universal_bible/features/bible/presentation/widgets/book_picker.
 import 'package:universal_bible/features/bible/presentation/widgets/compare_column.dart';
 import 'package:universal_bible/features/bible/presentation/widgets/translation_grid.dart';
 import 'package:universal_bible/features/bible/presentation/widgets/verse_action_panel.dart';
+import 'package:universal_bible/features/bible/data/bible_data_module.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:convert';
 import '../../../../core/providers/database_provider.dart';
@@ -79,8 +79,9 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
       _versesKey = key;
       _versesFuture = translationId != null && book != null && chapter != null
           ? ref
-                .read(databaseProvider)
-                .getVersesForChapter(translationId, book, chapter)
+                .read(bibleDataModuleProvider)
+                .getChapterData(translationId, book, chapter)
+                .then((data) => data.verses)
           : Future.value(<Verse>[]);
     }
     return _versesFuture!;
@@ -259,14 +260,17 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
     final target = nextChapterRef(books, book, chapter);
     if (target == null) return null;
 
-    final verses = await ref
-        .read(databaseProvider)
-        .getVersesForChapter(translationId, target.book, target.chapter);
+    final bibleData = ref.read(bibleDataModuleProvider);
+    final data = await bibleData.getChapterData(
+      translationId,
+      target.book,
+      target.chapter,
+    );
     return _LoadedChapter(
       book: target.book,
       chapter: target.chapter,
       bookName: bookNameFor(books, target),
-      verses: verses,
+      verses: data.verses,
     );
   }
 
@@ -280,14 +284,17 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
     final target = prevChapterRef(books, book, chapter);
     if (target == null) return null;
 
-    final verses = await ref
-        .read(databaseProvider)
-        .getVersesForChapter(translationId, target.book, target.chapter);
+    final bibleData = ref.read(bibleDataModuleProvider);
+    final data = await bibleData.getChapterData(
+      translationId,
+      target.book,
+      target.chapter,
+    );
     return _LoadedChapter(
       book: target.book,
       chapter: target.chapter,
       bookName: bookNameFor(books, target),
-      verses: verses,
+      verses: data.verses,
     );
   }
 
@@ -628,41 +635,40 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
     final translationId = ref.read(currentTranslationProvider);
     final refs = _sortedSelection();
     if (translationId == null || refs.isEmpty) return;
-    final db = ref.read(databaseProvider);
+    final bibleData = ref.read(bibleDataModuleProvider);
     final hex = highlightColorToHex(color);
 
     var allAlreadyThisColor = true;
     for (final v in refs) {
-      final existing = await db.getHighlightsForVerse(
+      final chapterData = await bibleData.getChapterData(
         translationId,
         v.book,
         v.chapter,
-        v.verse,
       );
-      if (existing.isEmpty || existing.any((h) => h.color != hex)) {
+      final existing = chapterData.highlightsByVerse[VerseRef(v.book, v.chapter, v.verse)];
+      if (existing == null || existing.color != hex) {
         allAlreadyThisColor = false;
         break;
       }
     }
 
     for (final v in refs) {
-      await db.deleteHighlightsForVerse(
-        translationId,
-        v.book,
-        v.chapter,
-        v.verse,
-      );
       if (!allAlreadyThisColor) {
-        await db.insertHighlight(
-          HighlightsCompanion.insert(
-            id: const Uuid().v4(),
-            translationId: translationId,
-            bookNumber: v.book,
-            chapter: v.chapter,
-            verse: v.verse,
-            color: hex,
-            createdAt: DateTime.now(),
-          ),
+        await bibleData.saveHighlight(
+          id: const Uuid().v4(),
+          translationId: translationId,
+          bookNumber: v.book,
+          chapter: v.chapter,
+          verse: v.verse,
+          color: hex,
+          createdAt: DateTime.now(),
+        );
+      } else {
+        await bibleData.deleteHighlightsForVerse(
+          translationId,
+          v.book,
+          v.chapter,
+          v.verse,
         );
       }
     }
@@ -676,17 +682,15 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
     final translationId = ref.read(currentTranslationProvider);
     final refs = _sortedSelection();
     if (translationId == null || refs.isEmpty) return;
-    final db = ref.read(databaseProvider);
+    final bibleData = ref.read(bibleDataModuleProvider);
     for (final v in refs) {
-      await db.insertBookmark(
-        BookmarksCompanion.insert(
-          id: const Uuid().v4(),
-          translationId: translationId,
-          bookNumber: v.book,
-          chapter: v.chapter,
-          verse: v.verse,
-          createdAt: DateTime.now(),
-        ),
+      await bibleData.insertBookmark(
+        id: const Uuid().v4(),
+        translationId: translationId,
+        bookNumber: v.book,
+        chapter: v.chapter,
+        verse: v.verse,
+        createdAt: DateTime.now(),
       );
     }
     _toast('Bookmarked ${refs.length} verse(s)');
@@ -710,7 +714,7 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
             maxLines: 6,
             minLines: 3,
             decoration: const InputDecoration(
-              hintText: 'Write your note…',
+              hintText: 'Write your note...',
               border: OutlineInputBorder(),
             ),
           ),
@@ -732,20 +736,18 @@ class _ReaderPageState extends ConsumerState<ReaderPageDesktop> {
     if (content == null || content.isEmpty) return;
 
     // One row per selected verse, same content (v1).
-    final db = ref.read(databaseProvider);
+    final bibleData = ref.read(bibleDataModuleProvider);
     final now = DateTime.now();
     for (final v in refs) {
-      await db.insertNote(
-        NotesCompanion.insert(
-          id: const Uuid().v4(),
-          translationId: translationId,
-          bookNumber: v.book,
-          chapter: v.chapter,
-          verse: v.verse,
-          content: content,
-          createdAt: now,
-          updatedAt: now,
-        ),
+      await bibleData.insertNote(
+        id: const Uuid().v4(),
+        translationId: translationId,
+        bookNumber: v.book,
+        chapter: v.chapter,
+        verse: v.verse,
+        content: content,
+        createdAt: now,
+        updatedAt: now,
       );
     }
     _toast('Note saved for ${refs.length} verse(s)');
@@ -1053,10 +1055,10 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
   Future<void> _reloadHighlights() async {
     final translationId = ref.read(currentTranslationProvider);
     if (translationId == null) return;
-    final db = ref.read(databaseProvider);
+    final bibleData = ref.read(bibleDataModuleProvider);
     final loaded = <VerseRef, Color>{};
     for (final ch in List<_LoadedChapter>.of(_chapters)) {
-      await _collectHighlights(db, translationId, ch, loaded);
+      await _collectHighlights(bibleData, translationId, ch, loaded);
     }
     if (!mounted) return;
     setState(() {
@@ -1072,28 +1074,28 @@ class _ReaderContentState extends ConsumerState<_ReaderContent> {
   Future<void> _loadHighlightsFor(_LoadedChapter ch) async {
     final translationId = ref.read(currentTranslationProvider);
     if (translationId == null) return;
-    final db = ref.read(databaseProvider);
+    final bibleData = ref.read(bibleDataModuleProvider);
     final loaded = <VerseRef, Color>{};
-    await _collectHighlights(db, translationId, ch, loaded);
+    await _collectHighlights(bibleData, translationId, ch, loaded);
     if (!mounted || loaded.isEmpty) return;
     setState(() => _highlightsByVerse.addAll(loaded));
   }
 
   Future<void> _collectHighlights(
-    AppDatabase db,
+    BibleDataModule bibleData,
     String translationId,
     _LoadedChapter ch,
     Map<VerseRef, Color> into,
   ) async {
-    final rows = await db.getHighlightsForChapter(
+    final data = await bibleData.getChapterData(
       translationId,
       ch.book,
       ch.chapter,
     );
-    for (final h in rows) {
-      final color = highlightColorFromHex(h.color);
+    for (final entry in data.highlightsByVerse.entries) {
+      final color = highlightColorFromHex(entry.value.color);
       if (color != null) {
-        into[VerseRef(h.bookNumber, h.chapter, h.verse)] = color;
+        into[entry.key] = color;
       }
     }
   }

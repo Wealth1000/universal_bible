@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:universal_bible/core/providers/database_provider.dart';
+import 'package:universal_bible/features/bible/data/bible_data_module.dart';
 import 'package:universal_bible/features/bible/data/repositories/translation_repository.dart';
 
 /// Single shared TranslationRepository provider. Previously this was
@@ -7,4 +8,12 @@ import 'package:universal_bible/features/bible/data/repositories/translation_rep
 final translationRepoProvider = Provider<TranslationRepository>((ref) {
   final db = ref.watch(databaseProvider);
   return TranslationRepository(db);
+});
+
+/// Single shared BibleDataModule provider. All bible-domain data access
+/// flows through this adapter — presentation files should not touch
+/// AppDatabase directly.
+final bibleDataModuleProvider = Provider<BibleDataModule>((ref) {
+  final db = ref.watch(databaseProvider);
+  return BibleDataModule(db);
 });

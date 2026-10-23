@@ -6,10 +6,9 @@ import 'package:go_router/go_router.dart';
 import 'package:universal_bible/core/providers/database_provider.dart';
 import 'package:universal_bible/core/providers/translation_repo_provider.dart';
 import 'package:universal_bible/core/utils/book_name_utils.dart';
-import 'package:universal_bible/database/app_database.dart'
-    hide ReadingPosition;
+import 'package:universal_bible/database/app_database.dart';
 import 'package:universal_bible/features/bible/domain/reader_provider.dart';
-import 'package:universal_bible/features/settings/domain/book_name_settings_provider.dart';
+import 'package:universal_bible/core/providers/book_name_settings_provider.dart';
 
 /// Notes for the active translation, most recently updated first. Tapping
 /// a note's reference jumps the reader there; notes can be edited in place
@@ -52,8 +51,8 @@ class _NotesPageState extends ConsumerState<NotesPageDesktop> {
             formatBookName(name, preserveOriginal: preserveOriginal);
       });
     }
-    final rows =
-        await ref.read(databaseProvider).getNotesForTranslation(translationId);
+    final bibleData = ref.read(bibleDataModuleProvider);
+    final rows = await bibleData.getNotes(translationId);
     if (!mounted) return;
     setState(() {
       _bookNames = names;
@@ -110,9 +109,11 @@ class _NotesPageState extends ConsumerState<NotesPageDesktop> {
     );
     controller.dispose();
     if (content == null || content.isEmpty || content == n.content) return;
-    await ref
-        .read(databaseProvider)
-        .updateNoteContent(n.id, content, DateTime.now());
+    await ref.read(bibleDataModuleProvider).updateNoteContent(
+      n.id,
+      content,
+      DateTime.now(),
+    );
     _load();
   }
 
@@ -137,7 +138,7 @@ class _NotesPageState extends ConsumerState<NotesPageDesktop> {
       ),
     );
     if (confirmed != true) return;
-    await ref.read(databaseProvider).deleteNote(n.id);
+    await ref.read(bibleDataModuleProvider).deleteNote(n.id);
     if (!mounted) return;
     setState(() {
       _notes?.remove(n);

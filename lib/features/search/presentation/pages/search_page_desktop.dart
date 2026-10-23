@@ -8,10 +8,9 @@ import 'package:universal_bible/core/providers/database_provider.dart';
 import 'package:universal_bible/core/providers/translation_repo_provider.dart';
 import 'package:universal_bible/core/utils/book_name_utils.dart';
 import 'package:universal_bible/core/utils/scripture_format.dart';
-import 'package:universal_bible/database/app_database.dart'
-    hide ReadingPosition;
+import 'package:universal_bible/database/app_database.dart';
 import 'package:universal_bible/features/bible/domain/reader_provider.dart';
-import 'package:universal_bible/features/settings/domain/book_name_settings_provider.dart';
+import 'package:universal_bible/core/providers/book_name_settings_provider.dart';
 
 /// Search over verse text. A scope selector picks a single translation or
 /// "All translations"; results update as the user types (debounced) and are
@@ -61,8 +60,8 @@ class _SearchPageState extends ConsumerState<SearchPageDesktop> {
   }
 
   Future<void> _loadTranslations() async {
-    final repo = ref.read(translationRepoProvider);
-    final installed = await repo.getInstalled();
+    final bibleData = ref.read(bibleDataModuleProvider);
+    final installed = await bibleData.getInstalledTranslations();
     if (!mounted) return;
 
     final preserveOriginal = ref.read(preserveOriginalBookNamesProvider);
@@ -118,11 +117,11 @@ class _SearchPageState extends ConsumerState<SearchPageDesktop> {
       _searching = true;
     });
 
-    final db = ref.read(databaseProvider);
+    final bibleData = ref.read(bibleDataModuleProvider);
     final results = <Verse>[];
     var truncated = false;
     for (final id in _scopeIds) {
-      final part = await db.searchVerses(id, query, limit: _resultLimit);
+      final part = await bibleData.searchVerses(id, query, limit: _resultLimit);
       if (part.length >= _resultLimit) truncated = true;
       results.addAll(part);
     }
@@ -191,7 +190,7 @@ class _SearchPageState extends ConsumerState<SearchPageDesktop> {
                         autofocus: true,
                         onChanged: _onQueryChanged,
                         decoration: InputDecoration(
-                          hintText: 'Search verses…',
+                          hintText: 'Search verses...',
                           prefixIcon: const Icon(Icons.search),
                           suffixIcon: _controller.text.isEmpty
                               ? null

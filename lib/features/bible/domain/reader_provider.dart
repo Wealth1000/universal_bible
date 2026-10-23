@@ -1,27 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:universal_bible/features/bible/domain/chapter_navigation.dart';
+import 'package:universal_bible/core/navigation/chapter_ref.dart';
 
-class CurrentTranslationNotifier extends Notifier<String?> {
-  @override
-  String? build() => null;
-  void set(String? id) => state = id;
-}
-
-class CurrentBookNotifier extends Notifier<int?> {
-  @override
-  int? build() => null;
-  void set(int? book) => state = book;
-}
-
-class CurrentChapterNotifier extends Notifier<int?> {
-  @override
-  int? build() => null;
-  void set(int? chapter) => state = chapter;
-}
-
-final currentChapterProvider = NotifierProvider<CurrentChapterNotifier, int?>(
-  CurrentChapterNotifier.new,
-);
+// Re-export the three cross-cutting navigation providers for backward
+// compatibility — files that import reader_provider.dart still get them.
+export 'package:universal_bible/core/providers/reader_navigation_provider.dart'
+    show currentTranslationProvider, currentBookProvider, currentChapterProvider;
 
 // --- Visible Location Provider (display-only, follows scroll) ---
 // Tracks BOTH the book and chapter currently centred in the viewport, so the
@@ -39,14 +22,6 @@ final visibleLocationProvider =
     NotifierProvider<VisibleLocationNotifier, ChapterRef?>(
       VisibleLocationNotifier.new,
     );
-
-final currentTranslationProvider =
-    NotifierProvider<CurrentTranslationNotifier, String?>(
-      CurrentTranslationNotifier.new,
-    );
-final currentBookProvider = NotifierProvider<CurrentBookNotifier, int?>(
-  CurrentBookNotifier.new,
-);
 
 // --- Verse Selection (§5) ---
 

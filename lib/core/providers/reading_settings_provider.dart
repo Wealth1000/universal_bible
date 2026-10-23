@@ -1,16 +1,19 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:universal_bible/core/persistence/persistence_adapter.dart';
 
 /// Reading settings shared by the settings page and the reader.
 ///
 /// Lives in core/ (not features/settings) because features must not import
-/// each other. Self-loads from SharedPreferences (same pattern as
+/// each other. Self-loads from [PersistenceAdapter] (same pattern as
 /// PreserveOriginalBookNamesNotifier) so the reader gets persisted values
 /// even if the settings page was never opened. Keys match the ones the
 /// settings page has always written, so existing prefs carry over.
 
 class FontSizeNotifier extends Notifier<double> {
   static const _prefsKey = 'fontSize';
+
+  FontSizeNotifier(this._persistence);
+  final PersistenceAdapter _persistence;
 
   @override
   double build() {
@@ -19,24 +22,26 @@ class FontSizeNotifier extends Notifier<double> {
   }
 
   Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final value = prefs.getDouble(_prefsKey) ?? 18.0;
-    if (value != state) state = value;
+    final raw = await _persistence.getInt(_prefsKey);
+    final value = raw?.toDouble() ?? 18.0;
+    if (ref.mounted && value != state) state = value;
   }
 
   Future<void> set(double value) async {
     state = value;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(_prefsKey, value);
+    await _persistence.setInt(_prefsKey, value.toInt());
   }
 }
 
 final fontSizeProvider = NotifierProvider<FontSizeNotifier, double>(
-  FontSizeNotifier.new,
+  () => FontSizeNotifier(SharedPreferencesPersistenceAdapter()),
 );
 
 class ShowVerseNumbersNotifier extends Notifier<bool> {
   static const _prefsKey = 'showVerseNumbers';
+
+  ShowVerseNumbersNotifier(this._persistence);
+  final PersistenceAdapter _persistence;
 
   @override
   bool build() {
@@ -45,21 +50,19 @@ class ShowVerseNumbersNotifier extends Notifier<bool> {
   }
 
   Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final value = prefs.getBool(_prefsKey) ?? true;
-    if (value != state) state = value;
+    final value = await _persistence.getBool(_prefsKey) ?? true;
+    if (ref.mounted && value != state) state = value;
   }
 
   Future<void> set(bool value) async {
     state = value;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_prefsKey, value);
+    await _persistence.setBool(_prefsKey, value);
   }
 }
 
 final showVerseNumbersProvider =
     NotifierProvider<ShowVerseNumbersNotifier, bool>(
-      ShowVerseNumbersNotifier.new,
+      () => ShowVerseNumbersNotifier(SharedPreferencesPersistenceAdapter()),
     );
 
 /// Default translation id — a FALLBACK only: the reader opens in the
@@ -68,6 +71,9 @@ final showVerseNumbersProvider =
 class DefaultTranslationNotifier extends Notifier<String?> {
   static const _prefsKey = 'defaultTranslation';
 
+  DefaultTranslationNotifier(this._persistence);
+  final PersistenceAdapter _persistence;
+
   @override
   String? build() {
     _load();
@@ -75,19 +81,17 @@ class DefaultTranslationNotifier extends Notifier<String?> {
   }
 
   Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final value = prefs.getString(_prefsKey);
-    if (value != state) state = value;
+    final value = await _persistence.getString(_prefsKey);
+    if (ref.mounted && value != state) state = value;
   }
 
   Future<void> set(String id) async {
     state = id;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_prefsKey, id);
+    await _persistence.setString(_prefsKey, id);
   }
 }
 
 final defaultTranslationProvider =
     NotifierProvider<DefaultTranslationNotifier, String?>(
-      DefaultTranslationNotifier.new,
+      () => DefaultTranslationNotifier(SharedPreferencesPersistenceAdapter()),
     );

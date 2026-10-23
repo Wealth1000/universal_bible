@@ -1,14 +1,8 @@
-import 'dart:convert';
-
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:universal_bible/core/providers/database_provider.dart';
-import 'package:universal_bible/core/providers/reading_settings_provider.dart';
-import 'package:universal_bible/core/providers/translation_repo_provider.dart';
 import 'package:universal_bible/core/utils/book_name_utils.dart';
-import 'package:universal_bible/features/bible/domain/reader_provider.dart';
+import 'package:universal_bible/features/bible/data/bible_data_module.dart';
 
 /// Resolves a human scripture reference (e.g. "Proverbs 22:6",
-/// "2 Timothy 3:14-15 NIV", "Psalm 83") into the actual verse text held in the
+/// "2 Timothy 3:14-15", "Psalm 83") into the actual verse text held in the
 /// local Drift database. Used by the Rhapsody devotional's scripture reveal
 /// sheet so references become readable passages offline.
 
@@ -97,98 +91,106 @@ class ResolvedPassage {
   final List<PassageVerse> verses;
 }
 
-/// Picks the translation to resolve against, mirroring the reader's cascade:
-/// in-session current → settings default → last reading position → first
-/// installed. Returns null only when no translation is installed.
-Future<String?> _resolveTranslationId(Ref ref) async {
-  final current = ref.read(currentTranslationProvider);
-  if (current != null) return current;
-  final def = ref.read(defaultTranslationProvider);
-  if (def != null) return def;
-  final pos = ref.read(readingPositionProvider);
-  if (pos != null) return pos.translationId;
-  final installed = await ref.read(translationRepoProvider).getInstalled();
-  return installed.isEmpty ? null : installed.first.id;
-}
+/// Deep module that resolves a scripture reference to its passage text.
+/// Accepts a [BibleDataModule] adapter so the resolution pipeline is
+/// unit-testable without Flutter bindings.
+class ScriptureResolver {
+  ScriptureResolver({required this.bibleData});
 
-/// Resolves [reference] to its passage text in the active translation.
-final scripturePassageProvider =
-    FutureProvider.family<ResolvedPassage, String>((ref, reference) async {
-  final translationId = await _resolveTranslationId(ref);
-  if (translationId == null) {
-    return ResolvedPassage(
-      reference: reference,
-      status: PassageStatus.noTranslation,
+  final BibleDataModule bibleData;
+
+  /// Resolves [reference] to its passage text. Uses [forcedTranslationId]
+  /// when provided; otherwise falls back to the first installed translation.
+  Future<ResolvedPassage> resolve(
+    String reference, {
+    String? forcedTranslationId,
+  }) async {
+    // 1. Determine translation ID
+    String? translationId = forcedTranslationId;
+    if (translationId == null) {
+      final installed = await bibleData.getInstalledTranslations();
+      if (installed.isEmpty) {
+        return ResolvedPassage(
+          reference: reference,
+          status: PassageStatus.noTranslation,
+        );
+      }
+      translationId = installed.first.id;
+    }
+
+    // 2. Parse the reference
+    final parsed = parseScriptureReference(reference);
+    if (parsed == null) {
+      return ResolvedPassage(
+        reference: reference,
+        status: PassageStatus.unparseable,
+        translationId: translationId,
+      );
+    }
+
+    // 3. Get the translation
+    final translation = await bibleData.getTranslation(translationId);
+    if (translation == null) {
+      return ResolvedPassage(
+        reference: reference,
+        status: PassageStatus.noTranslation,
+      );
+    }
+
+    // 4. Build canonical book-index
+    final bookInfo = await bibleData.getBookInfo(translationId);
+    final index = <String, int>{};
+    bookInfo.bookMap.forEach((rawKey, number) {
+      index[normalizeBookKey(rawKey)] = number;
+    });
+
+    // 5. Look up the book number
+    final bookNumber = index[normalizeBookKey(parsed.bookName)];
+    if (bookNumber == null) {
+      return ResolvedPassage(
+        reference: reference,
+        status: PassageStatus.bookNotFound,
+        translationId: translationId,
+        translationName: translation.name,
+      );
+    }
+
+    // 6. Fetch chapter verses
+    final chapterData = await bibleData.getChapterData(
+      translationId,
+      bookNumber,
+      parsed.chapter,
     );
-  }
 
-  final parsed = parseScriptureReference(reference);
-  if (parsed == null) {
+    // 7. Narrow to the requested verse range
+    final selected = chapterData.verses.where((v) {
+      if (parsed.startVerse == null) return true; // whole chapter
+      final end = parsed.endVerse ?? parsed.startVerse!;
+      return v.verse >= parsed.startVerse! && v.verse <= end;
+    }).toList()
+      ..sort((a, b) => a.verse - b.verse);
+
+    if (selected.isEmpty) {
+      return ResolvedPassage(
+        reference: reference,
+        status: PassageStatus.noVerses,
+        translationId: translationId,
+        translationName: translation.name,
+        bookNumber: bookNumber,
+        chapter: parsed.chapter,
+      );
+    }
+
     return ResolvedPassage(
       reference: reference,
-      status: PassageStatus.unparseable,
-      translationId: translationId,
-    );
-  }
-
-  final repo = ref.read(translationRepoProvider);
-  final translation = await repo.get(translationId);
-  if (translation == null) {
-    return ResolvedPassage(
-      reference: reference,
-      status: PassageStatus.noTranslation,
-    );
-  }
-
-  // Build a canonical book-name → number index from this translation's map.
-  final bookMap = jsonDecode(translation.bookMapJson) as Map<String, dynamic>;
-  final index = <String, int>{};
-  bookMap.forEach((rawKey, number) {
-    index[normalizeBookKey(rawKey)] = number as int;
-  });
-
-  final bookNumber = index[normalizeBookKey(parsed.bookName)];
-  if (bookNumber == null) {
-    return ResolvedPassage(
-      reference: reference,
-      status: PassageStatus.bookNotFound,
-      translationId: translationId,
-      translationName: translation.name,
-    );
-  }
-
-  final db = ref.read(databaseProvider);
-  final chapterVerses =
-      await db.getVersesForChapter(translationId, bookNumber, parsed.chapter);
-
-  // Narrow to the requested verse range.
-  final selected = chapterVerses.where((v) {
-    if (parsed.startVerse == null) return true; // whole chapter
-    final end = parsed.endVerse ?? parsed.startVerse!;
-    return v.verse >= parsed.startVerse! && v.verse <= end;
-  }).toList()
-    ..sort((a, b) => a.verse - b.verse);
-
-  if (selected.isEmpty) {
-    return ResolvedPassage(
-      reference: reference,
-      status: PassageStatus.noVerses,
+      status: PassageStatus.ok,
       translationId: translationId,
       translationName: translation.name,
       bookNumber: bookNumber,
       chapter: parsed.chapter,
+      verses: [
+        for (final v in selected) PassageVerse(verse: v.verse, text: v.verseText),
+      ],
     );
   }
-
-  return ResolvedPassage(
-    reference: reference,
-    status: PassageStatus.ok,
-    translationId: translationId,
-    translationName: translation.name,
-    bookNumber: bookNumber,
-    chapter: parsed.chapter,
-    verses: [
-      for (final v in selected) PassageVerse(verse: v.verse, text: v.verseText),
-    ],
-  );
-});
+}
