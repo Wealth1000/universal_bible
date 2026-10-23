@@ -7,7 +7,6 @@ import 'tables/verses.dart';
 import 'tables/notes.dart';
 import 'tables/highlights.dart';
 import 'tables/bookmarks.dart';
-import 'tables/reading_positions.dart';
 
 part 'app_database.g.dart';
 
@@ -18,11 +17,10 @@ part 'app_database.g.dart';
     Notes,
     Highlights,
     Bookmarks,
-    ReadingPositions,
   ],
 )
 class AppDatabase extends _$AppDatabase {
-  AppDatabase() : super(_openConnection());
+  AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
   int get schemaVersion => 1;
@@ -178,10 +176,4 @@ Future<void> deleteBookmark(String id) =>
 Future<List<Bookmark>> getBookmarksForTranslation(String translationId) =>
     (select(bookmarks)..where((b) => b.translationId.equals(translationId))).get();
 
-// --- Reading Position ---
-Future<void> upsertReadingPosition(ReadingPositionsCompanion companion) =>
-    into(readingPositions).insertOnConflictUpdate(companion);
-
-Future<ReadingPosition?> getReadingPosition(String translationId) =>
-    (select(readingPositions)..where((r) => r.translationId.equals(translationId))).getSingleOrNull();
 }

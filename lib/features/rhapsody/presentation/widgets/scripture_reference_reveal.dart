@@ -3,8 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:universal_bible/core/design/app_tokens.dart';
 import 'package:universal_bible/core/utils/scripture_format.dart';
-import 'package:universal_bible/features/bible/domain/reader_provider.dart';
+import 'package:universal_bible/core/providers/reader_navigation_provider.dart';
 import 'package:universal_bible/features/rhapsody/application/rhapsody_zoom_provider.dart';
+import 'package:universal_bible/features/rhapsody/application/rhapsody_providers.dart';
 import 'package:universal_bible/features/rhapsody/application/scripture_resolver.dart';
 
 /// Rubricated pill for a single scripture reference in a reading-plan list.

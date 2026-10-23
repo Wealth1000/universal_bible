@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:universal_bible/core/persistence/persistence_adapter.dart';
 import 'app_theme.dart';
 
 /// Theme mode with persistence (self-loading, same pattern as the reading
@@ -10,6 +10,9 @@ import 'app_theme.dart';
 class ThemeNotifier extends Notifier<ThemeMode> {
   static const _prefsKey = 'themeMode';
 
+  ThemeNotifier(this._persistence);
+  final PersistenceAdapter _persistence;
+
   @override
   ThemeMode build() {
     _load();
@@ -17,9 +20,8 @@ class ThemeNotifier extends Notifier<ThemeMode> {
   }
 
   Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final index = prefs.getInt(_prefsKey);
-    if (index != null &&
+    final index = await _persistence.getInt(_prefsKey);
+    if (ref.mounted && index != null &&
         index >= 0 &&
         index < ThemeMode.values.length &&
         ThemeMode.values[index] != state) {
@@ -30,12 +32,12 @@ class ThemeNotifier extends Notifier<ThemeMode> {
   Future<void> setTheme(ThemeMode mode) async {
     if (state == mode) return;
     state = mode;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_prefsKey, mode.index);
+    await _persistence.setInt(_prefsKey, mode.index);
   }
 }
 
-final themeProvider = NotifierProvider<ThemeNotifier, ThemeMode>(ThemeNotifier.new);
+final themeProvider =
+    NotifierProvider<ThemeNotifier, ThemeMode>(() => ThemeNotifier(SharedPreferencesPersistenceAdapter()));
 
 final themeDataProvider = Provider<ThemeData>((ref) {
   final mode = ref.watch(themeProvider);

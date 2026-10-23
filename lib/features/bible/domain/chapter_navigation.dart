@@ -1,12 +1,8 @@
+import 'package:universal_bible/core/navigation/chapter_ref.dart';
 import 'package:universal_bible/features/bible/domain/book_info.dart';
 
-/// A (book, chapter) location within a translation.
-class ChapterRef {
-  final int book;
-  final int chapter;
-
-  const ChapterRef(this.book, this.chapter);
-}
+// Re-export ChapterRef for backward compatibility.
+export 'package:universal_bible/core/navigation/chapter_ref.dart' show ChapterRef;
 
 List<int> _sortedChapters(BookInfo book) =>
     book.chapterCounts.keys.toList()..sort();

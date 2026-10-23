@@ -1,14 +1,17 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:universal_bible/core/persistence/persistence_adapter.dart';
 
 /// Whether the reader keeps loading the next chapter inline as the user
 /// scrolls past the end of the current one (crossing book boundaries:
 /// Genesis 50 flows into Exodus 1).
 ///
-/// Self-loads from SharedPreferences so the reader gets the persisted value
-/// even if the toggle was never opened this session.
+/// Self-loads from [PersistenceAdapter] so the reader gets the persisted
+/// value even if the toggle was never opened this session.
 class ContinuousReadingNotifier extends Notifier<bool> {
   static const _prefsKey = 'continuousReading';
+
+  ContinuousReadingNotifier(this._persistence);
+  final PersistenceAdapter _persistence;
 
   @override
   bool build() {
@@ -17,19 +20,17 @@ class ContinuousReadingNotifier extends Notifier<bool> {
   }
 
   Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final value = prefs.getBool(_prefsKey) ?? false;
-    if (value != state) state = value;
+    final value = await _persistence.getBool(_prefsKey) ?? false;
+    if (ref.mounted && value != state) state = value;
   }
 
   Future<void> set(bool value) async {
     state = value;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_prefsKey, value);
+    await _persistence.setBool(_prefsKey, value);
   }
 }
 
 final continuousReadingProvider =
     NotifierProvider<ContinuousReadingNotifier, bool>(
-      ContinuousReadingNotifier.new,
+      () => ContinuousReadingNotifier(SharedPreferencesPersistenceAdapter()),
     );

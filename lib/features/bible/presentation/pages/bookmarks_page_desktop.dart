@@ -7,10 +7,9 @@ import 'package:universal_bible/core/providers/database_provider.dart';
 import 'package:universal_bible/core/providers/translation_repo_provider.dart';
 import 'package:universal_bible/core/utils/book_name_utils.dart';
 import 'package:universal_bible/core/utils/scripture_format.dart';
-import 'package:universal_bible/database/app_database.dart'
-    hide ReadingPosition;
+import 'package:universal_bible/database/app_database.dart';
 import 'package:universal_bible/features/bible/domain/reader_provider.dart';
-import 'package:universal_bible/features/settings/domain/book_name_settings_provider.dart';
+import 'package:universal_bible/core/providers/book_name_settings_provider.dart';
 
 /// Bookmarks for the active translation, newest first. Tapping a bookmark
 /// jumps the reader to its chapter; deletion is immediate (single tap,
@@ -43,7 +42,7 @@ class _BookmarksPageState extends ConsumerState<BookmarksPageDesktop> {
       if (installed.isEmpty) {
         if (mounted) setState(() => _bookmarks = const []);
         return;
-      }
+       }
       translationId = installed.first.id;
     }
     final trans = await repo.get(translationId);
@@ -57,15 +56,18 @@ class _BookmarksPageState extends ConsumerState<BookmarksPageDesktop> {
       });
     }
 
-    final db = ref.read(databaseProvider);
-    final rows = await db.getBookmarksForTranslation(translationId);
-    rows.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final bibleData = ref.read(bibleDataModuleProvider);
+    final rows = await bibleData.getBookmarks(translationId);
 
     // Verse text previews.
     final previews = <String, String>{};
     for (final b in rows) {
-      final v =
-          await db.getVerse(b.translationId, b.bookNumber, b.chapter, b.verse);
+      final v = await bibleData.getVerse(
+        b.translationId,
+        b.bookNumber,
+        b.chapter,
+        b.verse,
+      );
       if (v != null) {
         previews[b.id] = normalizeResolvedScriptureText(v.verseText);
       }
@@ -97,7 +99,7 @@ class _BookmarksPageState extends ConsumerState<BookmarksPageDesktop> {
   }
 
   Future<void> _deleteBookmark(Bookmark b) async {
-    await ref.read(databaseProvider).deleteBookmark(b.id);
+    await ref.read(bibleDataModuleProvider).deleteBookmark(b.id);
     if (!mounted) return;
     setState(() {
       _bookmarks?.remove(b);

@@ -7,7 +7,7 @@ import 'package:universal_bible/core/providers/translation_repo_provider.dart';
 import 'package:universal_bible/core/utils/book_name_utils.dart';
 import 'package:universal_bible/features/bible/domain/reader_provider.dart';
 import 'package:universal_bible/features/bible/presentation/widgets/compare_column.dart';
-import 'package:universal_bible/features/settings/domain/book_name_settings_provider.dart';
+import 'package:universal_bible/core/providers/book_name_settings_provider.dart';
 
 /// §6 owner addition: routed full-screen comparison of the selected
 /// verse(s) across all installed translations. Reached from the split-view
